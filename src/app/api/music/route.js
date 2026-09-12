@@ -16,6 +16,7 @@ import {
   isPlatformPlayEnabled,
   isPlatformSearchEnabled,
 } from "@/lib/music-platform-flags";
+import { loadEffectiveMusicFlags } from "@/lib/music-effective-flags";
 import {
   GD_BRS,
   GD_DEFAULT_BR,
@@ -224,6 +225,11 @@ export async function GET(request) {
     return send({ code: 429, msg: "请求过于频繁，请稍后再试" }, 429);
   }
 
+  // 加载生效平台开关矩阵（含配置文档覆写 + env 终闸）
+  const effectiveFlags = await loadEffectiveMusicFlags();
+  const effSearch = effectiveFlags.flags.search;
+  const effPlay = effectiveFlags.flags.play;
+
   // —— 参数读取与白名单校验 ——
   const action = (searchParams.get("action") || "url").trim().toLowerCase();
   const source = normalizeSource(searchParams.get("source") || GD_DEFAULT_SOURCE);
@@ -259,7 +265,7 @@ export async function GET(request) {
         400
       );
     }
-    if (!isSearchableSource(source) || !isPlatformSearchEnabled(source)) {
+    if (!isSearchableSource(source) || !isPlatformSearchEnabled(source, effSearch)) {
       return send(
         {
           code: 400,
@@ -267,7 +273,9 @@ export async function GET(request) {
             ? `该平台搜索引擎已停用：${source}（部署侧配置 MUSIC_PLATFORM_SEARCH 可开启）`
             : `该 music source 暂不支持关键词搜索：${source}`,
           usage: "/api/music?action=search&source=netease&keyword=<关键词>",
-          supportedSources: GD_SEARCH_SOURCE_LIST.filter(isPlatformSearchEnabled),
+          supportedSources: GD_SEARCH_SOURCE_LIST.filter((k) =>
+            isPlatformSearchEnabled(k, effSearch)
+          ),
         },
         400
       );
@@ -656,7 +664,7 @@ export async function GET(request) {
   }
   // 平台播放引擎开关：仅约束「面向用户平台」的取链（其余 GD 源交给上游自证），
   // 关闭的平台走拦截（置 failType=source-unavailable 语义，见 URL_FAILURE 处理）
-  if (MUSIC_FLAG_PLATFORM_KEYS.includes(source) && !isPlatformPlayEnabled(source)) {
+  if (MUSIC_FLAG_PLATFORM_KEYS.includes(source) && !isPlatformPlayEnabled(source, effPlay)) {
     return send(
       {
         code: 400,
@@ -665,7 +673,7 @@ export async function GET(request) {
         failType: MUSIC_FAILURE.SOURCE_UNAVAILABLE,
         supportedSources: GD_SOURCE_LIST.filter(
           (key) =>
-            !MUSIC_FLAG_PLATFORM_KEYS.includes(key) || isPlatformPlayEnabled(key)
+            !MUSIC_FLAG_PLATFORM_KEYS.includes(key) || isPlatformPlayEnabled(key, effPlay)
         ),
       },
       400

@@ -16,6 +16,21 @@ vi.mock("@/lib/self-search", async (importOriginal) => {
   };
 });
 
+// mock effective flags so route handler's loadEffectiveMusicFlags 不触达真实存储
+vi.mock("@/lib/music-effective-flags", () => ({
+  loadEffectiveMusicFlags: vi.fn().mockResolvedValue({
+    baseline: { search: { netease: true, tencent: false, kugou: true, kuwo: true, migu: true, joox: true }, play: { netease: true, tencent: false, kugou: true, kuwo: true, migu: false, joox: true } },
+    flags: { search: { netease: true, tencent: false, kugou: true, kuwo: true, migu: true, joox: true }, play: { netease: true, tencent: false, kugou: true, kuwo: true, migu: false, joox: true } },
+    overrides: null,
+    behavior: { autoFallback: { enabled: true, maxAttempts: 4, crossSearch: true, showManualDialog: true } },
+    locked: { search: [], play: ["tencent"] },
+    editable: true,
+    blockedReason: null,
+  }),
+  normalizeMusicSettingsDoc: vi.fn(),
+  MUSIC_SETTINGS_KEY: "music.flags",
+}));
+
 // 取直链走真实 normalizeKugouHash；只 stub 网络编排 getKugouPlayUrl
 vi.mock("@/lib/self-search/kugou", async (importOriginal) => {
   const mod = await importOriginal();
@@ -105,7 +120,7 @@ describe("GET /api/music/self · action=search", () => {
     });
     expect(res.status).toBe(200);
     const json = await res.json();
-    expect(mocked.selfSearch).toHaveBeenCalledWith("kugou", "晴天", 1, 20);
+    expect(mocked.selfSearch).toHaveBeenCalledWith("kugou", "晴天", 1, 20, expect.anything()); // 第5个参数=effSearch（生效搜索表）
     expect(mocked.hasSelfSearchNextPage).toHaveBeenCalledWith({
       page: 1,
       limit: 20,
@@ -121,7 +136,7 @@ describe("GET /api/music/self · action=search", () => {
 
   it("count 超上限被夹到 30、page 下限 1", async () => {
     await callSelf({ action: "search", source: "kugou", keyword: "x", count: "999", page: "0" });
-    expect(mocked.selfSearch).toHaveBeenCalledWith("kugou", "x", 1, 30);
+    expect(mocked.selfSearch).toHaveBeenCalledWith("kugou", "x", 1, 30, expect.anything()); // 第5个参数=effSearch
   });
 
   it("空结果正常返回（非错误）", async () => {

@@ -15,6 +15,7 @@ import {
   isPlatformPlayEnabled,
   isPlatformSearchEnabled,
 } from "@/lib/music-platform-flags";
+import { loadEffectiveMusicFlags } from "@/lib/music-effective-flags";
 import { SelfSearchError, SELF_SEARCH_FAILURE } from "@/lib/self-search/errors";
 import {
   SELF_SEARCH_PAGE_MAX,
@@ -91,6 +92,11 @@ export async function GET(request) {
     return send({ code: 429, msg: "请求过于频繁，请稍后再试" }, 429);
   }
 
+  // 加载生效平台开关矩阵
+  const effectiveFlags = await loadEffectiveMusicFlags();
+  const effSearch = effectiveFlags.flags.search;
+  const effPlay = effectiveFlags.flags.play;
+
   // —— 参数读取与校验 ——
   const action = (searchParams.get("action") || "search").trim().toLowerCase();
   if (action !== "search" && action !== "url") {
@@ -121,7 +127,7 @@ export async function GET(request) {
         400
       );
     }
-    if (!isPlatformPlayEnabled(source)) {
+    if (!isPlatformPlayEnabled(source, effPlay)) {
       return send(
         {
           code: 400,
@@ -179,10 +185,10 @@ export async function GET(request) {
     .toLowerCase();
   // 可启用集合 = 平台搜索引擎开关（MUSIC_PLATFORM_SEARCH）∩ 自研搜索注册表
   // （enabledPlatformList 含 joox 等 GD-only 平台，需用 SELF_SEARCH_SOURCE_LABELS 收窄）
-  const enabledSources = enabledPlatformList("search").filter(
+  const enabledSources = enabledPlatformList("search", effSearch).filter(
     (key) => SELF_SEARCH_SOURCE_LABELS[key] !== undefined
   );
-  if (!isPlatformSearchEnabled(source) || !enabledSources.includes(source)) {
+  if (!isPlatformSearchEnabled(source, effSearch) || !enabledSources.includes(source)) {
     return send(
       {
         code: 400,
@@ -227,7 +233,7 @@ export async function GET(request) {
   let payload;
   let status = 200;
   try {
-    const { items, total } = await selfSearch(source, keyword, page, count);
+    const { items, total } = await selfSearch(source, keyword, page, count, effSearch);
     const hasMore = hasSelfSearchNextPage({
       page,
       limit: count,

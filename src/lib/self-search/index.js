@@ -64,7 +64,7 @@ function toSearchItem(candidate, source) {
  * @returns {Promise<{ source: string, items: object[], total: number }>}
  *   items 为空数组表示「正常搜到空结果」（不是错误）。
  */
-export async function selfSearch(source, keyword, page, limit) {
+export async function selfSearch(source, keyword, page, limit, searchFlags) {
   const searcher = SEARCHERS[source];
   if (!searcher) {
     throw new SelfSearchError(
@@ -72,7 +72,7 @@ export async function selfSearch(source, keyword, page, limit) {
       `自研搜索暂未支持该 source：${source}`
     );
   }
-  if (!isPlatformSearchEnabled(source)) {
+  if (!isPlatformSearchEnabled(source, searchFlags || undefined)) {
     throw new SelfSearchError(
       SELF_SEARCH_FAILURE.SOURCE_UNAVAILABLE,
       `该平台搜索引擎已停用：${source}（部署侧配置 MUSIC_PLATFORM_SEARCH 可开启）`

@@ -31,6 +31,7 @@ import {
 } from "@/lib/kuwo-meta";
 import { buildSongInfoUrl, parseSongInfo, buildAlbumCoverUrl } from "@/lib/qqmusic";
 import { isPlatformPlayEnabled } from "@/lib/music-platform-flags";
+import { loadEffectiveMusicFlags } from "@/lib/music-effective-flags";
 import {
   buildKugouPlayUrl,
   normalizeKugouHash,
@@ -152,9 +153,10 @@ async function identifyLink(rawLink) {
 function playableResponse(
   corsHeaders,
   { platform, songId, meta, placeholderPrefix },
-  startTime
+  startTime,
+  playTable
 ) {
-  if (!isPlatformPlayEnabled(platform)) {
+  if (!isPlatformPlayEnabled(platform, playTable)) {
     const label = MUSIC_PLATFORM_LABEL[platform];
     console.log(
       `[music-resolve] time=${beijingNow()} code=200 status=engine-missing platform=${platform} songId=${songId} duration=${
@@ -238,6 +240,9 @@ export async function GET(request) {
     );
   }
 
+  // 加载生效平台开关矩阵
+  const { flags: { play: effPlay } } = await loadEffectiveMusicFlags();
+
   const rawLink = String(searchParams.get("link") ?? "").slice(0, LINK_MAX_LEN);
   if (!rawLink.trim()) {
     return Response.json(
@@ -318,7 +323,8 @@ export async function GET(request) {
         meta,
         placeholderPrefix: FALLBACK_TITLE_PREFIX.netease,
       },
-      startTime
+      startTime,
+      effPlay
     );
   }
 
@@ -366,7 +372,8 @@ export async function GET(request) {
         meta,
         placeholderPrefix: FALLBACK_TITLE_PREFIX.tencent,
       },
-      startTime
+      startTime,
+      effPlay
     );
   }
 
@@ -410,7 +417,8 @@ export async function GET(request) {
         meta,
         placeholderPrefix: FALLBACK_TITLE_PREFIX.kuwo,
       },
-      startTime
+      startTime,
+      effPlay
     );
   }
 
@@ -461,7 +469,8 @@ export async function GET(request) {
         meta,
         placeholderPrefix: FALLBACK_TITLE_PREFIX.kugou,
       },
-      startTime
+      startTime,
+      effPlay
     );
   }
 
