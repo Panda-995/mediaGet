@@ -3,7 +3,7 @@
  *
  * 每个「面向用户的搜索平台」都有两个独立开关：
  *   - search：平台搜索引擎（决定该平台能否被关键词搜索 / 是否出现在搜索源 chips）；
- *   - play：  平台播放引擎（决定内置直链引擎是否允许为该平台取播放 URL / resolve 是否宣称 playable）。
+ *   - play:  平台播放引擎（决定内置直链引擎是否允许为该平台取播放 URL / resolve 是否宣称 playable）。
  *
  * 平台全集 MUSIC_FLAG_PLATFORM_KEYS 覆盖前端可选的搜索平台（GD 通道命名）：
  * netease / kuwo / joox 走 GD 搜索引擎与 GD 直链；tencent / kugou / migu 走自研直连
@@ -12,7 +12,7 @@
  *
  * 默认值（2026-09，与「腾讯暂时不可用」事实一致，但均可用 env 覆盖）：
  *   - search：除 tencent 外全开（QQ 可播直链暂无稳定来源，先不给搜索入口）；
- *   - play：  开放实测可用的 netease / kuwo / kugou / joox——kugou 为官方免费 128k
+ *   - play:  开放实测可用的 netease / kuwo / kugou / joox——kugou 为官方免费 128k
  *             试听直链（VIP/付费曲取链会失败，见 failType=vip-only）；tencent（GD 上游
  *             不开放）与 migu（无内置直链）默认关——migu 的播放可由已配置的 lx 音源脚本
  *             兜底（urlFallbacks，见 lx-provider.js，不受本开关约束）。
@@ -60,11 +60,32 @@ export const MUSIC_PLATFORM_DEFAULT_FLAGS = {
   play: {
     netease: true,
     tencent: false, // GD 上游不开放 tencent 取链（2026-09 实测 400）
-    kugou: true, // 内置酷狗官方免费试听直链（getSongInfo，免费档 128k mp3）
+    kugou: true, // 内置酷狗官方试听直链（getSongInfo，免费档 128k mp3）
     kuwo: true,
     migu: false, // 无内置直链引擎；lx 脚本兜底不依赖本开关
     joox: true,
   },
+};
+
+/**
+ * 「自动换源」行为配置默认值（同构：前端面板与后端求值共用同一份，避免两端漂移）。
+ * enabled          自动换源总开关
+ * maxAttempts      单轮直链请求上限（队列候选 + 跨源现搜候选合计）
+ * crossSearch      队列内无自动候选时是否跨音源现搜同名歌曲
+ * showManualDialog 自动换源收尾仍失败时是否弹人工选版面板
+ */
+export const MUSIC_BEHAVIOR_DEFAULTS = {
+  autoFallback: {
+    enabled: true,
+    maxAttempts: 4,
+    crossSearch: true,
+    showManualDialog: true,
+  },
+};
+
+/** 行为配置取值边界（面板步进与后端校验共用） */
+export const MUSIC_BEHAVIOR_LIMITS = {
+  maxAttempts: { min: 1, max: 8 },
 };
 
 const ENV_NAMES = {
@@ -164,6 +185,20 @@ function parseOffList(raw) {
 }
 
 /**
+ * 某维度被 env 终闸锁定的平台键（MUSIC_PLATFORM_OFF ∪ 本维度 *_DISABLED），
+ * 按全集顺序返回。锁定槽在配置文档里恒存 null（面板不可编辑），
+ * 求值时无论文档写什么一律强制 false —— 这是不可让渡的运维能力。
+ */
+export function lockedPlatformKeys(kind) {
+  const locked = new Set();
+  for (const key of parseOffList(readEnv(OFF_ENV_NAME))) locked.add(key);
+  for (const key of parseDisabledList(kind, readEnv(DISABLED_ENV_NAMES[kind]))) {
+    locked.add(key);
+  }
+  return MUSIC_FLAG_PLATFORM_KEYS.filter((key) => locked.has(key));
+}
+
+/**
  * 解析某维度（"search" | "play"）生效的开关表：
  * 默认矩阵 → 正向 env 覆盖（JSON / "all"）→ 禁用黑名单（最终闸门，强制关）。
  * 每次调用动态读 env（对齐 gdmusic.getUpstreamBases），便于部署后 env 生效与单测注入。
@@ -172,35 +207,31 @@ export function resolveMusicPlatformFlags(kind) {
   const defaults = MUSIC_PLATFORM_DEFAULT_FLAGS[kind] || {};
   const override = parseOverride(kind, readEnv(ENV_NAMES[kind]));
   const table = override ? { ...defaults, ...override } : { ...defaults };
-  // 最终闸门：整体下线变量（MUSIC_PLATFORM_OFF，search/play 一并关闭）与本维度禁用
-  // 黑名单取并集——列出的平台本维度一律强制 false（可压过 "all" / JSON 打开）
-  for (const key of parseOffList(readEnv(OFF_ENV_NAME))) {
-    table[key] = false;
-  }
-  for (const key of parseDisabledList(kind, readEnv(DISABLED_ENV_NAMES[kind]))) {
+  // 最终闸门：整体下线变量与本维度禁用黑名单取并集——列出的平台本维度一律强制 false
+  for (const key of lockedPlatformKeys(kind)) {
     table[key] = false;
   }
   return table;
 }
 
-/** 某平台是否开启某维度开关 */
-export function isMusicPlatformEnabled(kind, source) {
-  const table = resolveMusicPlatformFlags(kind);
-  return table[source] === true;
+/** 某平台是否开启某维度开关（可选传入显式开关表，不传则读 env 基线） */
+export function isMusicPlatformEnabled(kind, source, table) {
+  const t = table || resolveMusicPlatformFlags(kind);
+  return t[source] === true;
 }
 
-/** 简写：搜索开关 */
-export function isPlatformSearchEnabled(source) {
-  return isMusicPlatformEnabled("search", source);
+/** 简写：搜索开关（可选传入显式开关表） */
+export function isPlatformSearchEnabled(source, table) {
+  return isMusicPlatformEnabled("search", source, table);
 }
 
-/** 简写：播放引擎开关 */
-export function isPlatformPlayEnabled(source) {
-  return isMusicPlatformEnabled("play", source);
+/** 简写：播放引擎开关（可选传入显式开关表） */
+export function isPlatformPlayEnabled(source, table) {
+  return isMusicPlatformEnabled("play", source, table);
 }
 
-/** 某维度开启的平台列表（按 MUSIC_FLAG_PLATFORM_KEYS 顺序） */
-export function enabledPlatformList(kind) {
-  const table = resolveMusicPlatformFlags(kind);
-  return MUSIC_FLAG_PLATFORM_KEYS.filter((key) => table[key] === true);
+/** 某维度开启的平台列表（按 MUSIC_FLAG_PLATFORM_KEYS 顺序；可选传入显式开关表） */
+export function enabledPlatformList(kind, table) {
+  const t = table || resolveMusicPlatformFlags(kind);
+  return MUSIC_FLAG_PLATFORM_KEYS.filter((key) => t[key] === true);
 }
