@@ -2,20 +2,24 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Music2 } from "lucide-react";
+import { Music2, Sliders } from "lucide-react";
 import { siteConfig } from "@/config/site";
 import ThemeToggle from "@/components/ThemeToggle";
 
 /**
  * 站点顶部导航（自研组件）
- * - 左侧：站点品牌（渐变 logo + 标题，/music 下动态切换为音乐 logo/标题）
+ * - 左侧：站点品牌（渐变 logo + 标题，/music 下动态切换为音乐 logo/标题；
+ *   /music/settings 控制台下切换为「音乐控制台」，即设置页原有的控制台标题栏，页内不再重复）
  * - 右侧：视频解析 / 音乐解析 / 常见问题入口 + 主题切换，各页面保持一致
+ *   （不额外插入返回/工具入口，保持单层导航）
  * 说明：「发现歌曲 / 播放列表」切换器已移至 /music 内容区顶部功能区左上角
  * （见 components/music/MusicViewSeg.tsx），此处不再展示。
  */
 export default function SiteHeader() {
   const pathname = usePathname();
   const isMusic = pathname === "/music";
+  // 控制台（含 /music/settings/login）：品牌取控制台标题语义
+  const isConsole = pathname.startsWith("/music/settings");
 
   const linkCls =
     "rounded-lg px-3 py-1.5 transition-colors hover:bg-glass-2 hover:text-primary";
@@ -23,10 +27,32 @@ export default function SiteHeader() {
   return (
     <header className="sticky top-0 z-50 border-b border-border-subtle bg-glass-1 backdrop-blur-xl">
       <div className="flex h-14 w-full items-center justify-between gap-2 px-4 sm:px-6 lg:px-8">
-        {/* 左侧：Brand（/music 动态切换音乐 logo + 标题） */}
+        {/* 左侧：Brand（/music 动态切换音乐 logo + 标题；控制台下「音乐控制台」点回音乐解析页） */}
         <div className="flex min-w-0 items-center gap-1 sm:gap-2">
-          <Link href="/" className="group flex min-w-0 items-center gap-2.5">
-            {isMusic ? (
+          <Link
+            href={isConsole ? "/music" : "/"}
+            title={isConsole ? "返回音乐解析" : undefined}
+            className="group flex min-w-0 items-center gap-2.5">
+            {isConsole ? (
+              <>
+                <span
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white"
+                  style={{
+                    background: "linear-gradient(135deg, #335eea 0%, #1f3fb5 100%)",
+                    boxShadow: "0 4px 12px rgba(51, 94, 234, 0.38)",
+                  }}>
+                  <Sliders className="h-4 w-4" strokeWidth={2.2} />
+                </span>
+                <span className="flex min-w-0 flex-col leading-tight">
+                  <span className="truncate text-sm font-bold text-foreground">
+                    音乐控制台
+                  </span>
+                  <span className="hidden text-[10px] text-muted sm:block">
+                    {siteConfig.name} · 平台引擎设置
+                  </span>
+                </span>
+              </>
+            ) : isMusic ? (
               <>
                 <span
                   className="grid h-8 w-8 shrink-0 place-items-center rounded-xl text-white"

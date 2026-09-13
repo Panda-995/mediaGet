@@ -138,6 +138,9 @@ export default function XhsVideo({ data }: XhsVideoProps) {
           url={xhsData.url}
           cover={xhsData.cover}
           alt={xhsData.title || "视频封面"}
+          title={xhsData.title}
+          author={xhsData.author}
+          platform="xhs"
           accent="pink"
           tall
           inline

@@ -21,10 +21,7 @@
  *    跨源现搜候选等由 music-caps 生效矩阵过滤；直链 / 歌词 / 封面通道能力不随本开关移除。
  *    kuwo / netease / tencent 的自研搜索结果可复用既有 GD 直链 / 歌词 / 封面通道；
  *    kugou 内置官方试听直链（/api/music/self?action=url，免费档 128k mp3，VIP/付费曲
- *    返回 failType=vip-only）；migu 自研搜索无内置直链——若配置了对应 lx 音源脚本
- *    （sources 目录 urlFallbacks 映射，见 lx-provider.js MUSIC_LX_URL_FALLBACKS），
- *    点播/切音质时会自动改由音源脚本按同曲 id/hash/songmid 换直链（见 requestPlayDirect）。
- * 3. 洛雪(lx-music)扩展音源：同源 /api/music/lx（脚本仅在 Node 侧沙箱执行，无直连兜底）。
+ *    返回 failType=vip-only）；migu 自研搜索无内置直链。
  *
  * 注意：浏览器直连没有服务端缓存 / 限流兜底，且仅对民用出口可用；数据契约解析与本文件上游
  * 协议均对齐 src/lib/gdmusic.js（服务端解析仍以该文件为准，本文件仅保留浏览器端所需的最小解析）。
@@ -36,6 +33,7 @@ import {
   type SearchSourceKey,
 } from "@/components/music/types";
 import {
+  isBuiltinPlayOn,
   isPlatformPlayOn,
   isPlatformSearchOn,
 } from "@/lib/music-caps";
@@ -46,7 +44,7 @@ export const PAGE_SIZE = 20;
 /** 上游公共实例（与 gdmusic.js 未配置 MUSIC_API_BASE 时的默认值同址） */
 const DIRECT_BASE = "https://music-api.gdstudio.xyz/api.php";
 
-/** GD 音乐台公共实例 host：代理默认基址与直连降级目标都可能指向它，列表标注时按此归名为「GD 公共源」 */
+/** GD 音乐台公共实例 host：代理默认基址与直连降级目标都可能指向它，列表标注时按此归名为「GD 音乐」 */
 export const GD_PUBLIC_HOST = "music-api.gdstudio.xyz";
 
 /** 上游搜索页码上限（对齐 gdmusic.js 的 GD_SEARCH_PAGE_MAX） */
@@ -128,46 +126,7 @@ export interface LyricData {
   lyric: string;
 }
 
-// —— 洛雪(lx-music)生态音源脚本 Provider（扩展音源）——
-// 部署侧配置 MUSIC_LX_SCRIPTS（见 src/lib/lx-provider.js）且脚本可用时，同源
-// /api/music/lx 会返回扩展源目录。浏览器端据此把「内置 GD 源之外」的扩展源 key
-// 识别为 lx 源：搜索 / 直链 / 歌词请求改发 /api/music/lx（音源脚本只能在 Node 侧
-// 沙箱执行，故 lx 源没有 GD 那样的浏览器直连兜底，错误信息原样透传给用户）。
-
-/** /api/music/lx?action=sources 返回的单条可搜索扩展源 */
-export interface LxSearchSource {
-  key: string;
-  label: string;
-  qualitys?: string[];
-  scriptId?: string;
-}
-
-/** 内置平台 → lx 音源 source key 的取直链兜底映射项（服务端按已加载脚本解析） */
-export interface LxUrlFallback {
-  platform: string;
-  source: string;
-}
-
-/** /api/music/lx?action=sources 返回的完整目录 */
-export interface LxCatalogData {
-  enabled: boolean;
-  scripts: Array<{
-    id: string;
-    url?: string;
-    name?: string;
-    description?: string;
-    version?: string;
-    state?: string;
-    ok?: boolean;
-    error?: string | null;
-  }>;
-  searchSources: LxSearchSource[];
-  allSourceKeys: string[];
-  /** 内置平台曲目取直链失败时的 lx 音源兜底映射（仅含已注册带 musicUrl 的 source） */
-  urlFallbacks?: LxUrlFallback[];
-}
-
-/** 内置 GD 源 key：无论 lx 脚本是否声明同名源，内置源都优先，避免扩展源抢占主链路。
+/** 内置 GD 源 key：内置源优先。
  *  注意渠道细节：netease/kuwo 的搜索现以自研为主（GD 引擎兜底），joox 搜索仅 GD。 */
 const GD_BUILTIN_SOURCE_KEYS = SEARCH_SOURCES.map((s) => s.key);
 
@@ -186,88 +145,23 @@ export const SELF_SEARCH_KEYS = new Set([
 const GD_FALLBACK_SEARCH_KEYS = new Set(["netease", "kuwo"]);
 
 /** 自研直连源中仍未接内置取直链的子集（仅 migu；kugou 已内置官方试听直链）。
- *  这些源没有本服务直链路径，只能依赖已配置的 lx 音源脚本兜底（urlFallbacks）。 */
+ *  这些源没有本服务直链路径。 */
 export const SELF_ONLY_ENGINE_KEYS = new Set(["migu"]);
 
-/** 引擎通道 = 自研直连（/api/music/self，无 GD/lx/浏览器直连概念）的源：
+/** 引擎通道 = 自研直连（/api/music/self，无 GD/浏览器直连概念）的源：
  *  kugou 用官方试听直链，migu 无内置直链（见 SELF_ONLY_ENGINE_KEYS）。
  *  自研双通道源 netease/kuwo 与 tencent（历史曲目走 GD）的引擎通道仍是 gd，不在此列。 */
 export const SELF_CHANNEL_SOURCE_KEYS = new Set(["kugou", "migu"]);
-
-/** 无论 lx 脚本是否声明同名源都算内置（GD 或自研直连）的 key，扩展源目录需剔除它们 */
-const BUILTIN_SOURCE_KEYS = [...GD_BUILTIN_SOURCE_KEYS, ...SELF_SEARCH_CHIP_KEYS];
-
-/** 目录的进程内缓存（同一会话只拉一次；音乐页挂在主请求的独立入口） */
-let lxCatalogCache: LxCatalogData | null = null;
-let lxCatalogInflight: Promise<LxCatalogData> | null = null;
-
-export function lxCatalogSnapshot(): LxCatalogData | null {
-  return lxCatalogCache;
-}
-
-/** 仅供测试：清空目录缓存，便于重新拉取 */
-export function resetLxCatalogCache(): void {
-  lxCatalogCache = null;
-}
-
-/** 仅供测试：直接写入目录缓存，省去 mock 网络往返 */
-export function setLxCatalogCacheForTest(data: LxCatalogData | null): void {
-  lxCatalogCache = data;
-}
-
-/** 拉取 lx 扩展源目录（失败可重试，成功后本会话不再重复请求） */
-export async function fetchLxCatalog(
-  signal?: AbortSignal
-): Promise<LxCatalogData> {
-  if (lxCatalogCache) return lxCatalogCache;
-  if (lxCatalogInflight) return lxCatalogInflight;
-  lxCatalogInflight = (async () => {
-    try {
-      const payload = await proxyGet(
-        new URLSearchParams({ action: "sources" }),
-        signal,
-        "/api/music/lx"
-      );
-      const data = payload.data as LxCatalogData | undefined;
-      if (
-        !data ||
-        !Array.isArray(data.searchSources) ||
-        !Array.isArray(data.scripts)
-      ) {
-        throw new MusicError("biz", "扩展音源目录返回异常");
-      }
-      lxCatalogCache = data;
-      return data;
-    } finally {
-      lxCatalogInflight = null;
-    }
-  })();
-  return lxCatalogInflight;
-}
-
-/** 该 source key 是否由 lx 脚本提供（目录加载后生效；内置 GD / 自研直连源永远不算） */
-export function isLxSourceKey(sourceKey: string): boolean {
-  if (!lxCatalogCache || BUILTIN_SOURCE_KEYS.includes(sourceKey)) return false;
-  return lxCatalogCache.allSourceKeys.includes(sourceKey);
-}
-
-/** 目录中「内置源之外」的可搜索扩展源（供音乐页动态 chip 展示） */
-export function lxSearchableSources(): LxSearchSource[] {
-  if (!lxCatalogCache) return [];
-  return (lxCatalogCache.searchSources || []).filter(
-    (s) => !BUILTIN_SOURCE_KEYS.includes(s.key)
-  );
-}
 
 /**
  * 「可搜又可播」的音源 key 集合（跨源现搜兜底来源 B 用）。
  *
  * 规则（对齐 musicEngine.md §5 来源 B）：
  * - 内置平台（GD 源 netease/kuwo/joox + 自研源 tencent/kugou/migu）须同时满足
- *   平台搜索引擎开关 search 与播放引擎开关 play（music-caps，默认 tencent 全关、
- *   migu play 关），且剔除 SELF_ONLY_ENGINE_KEYS——migu 无内置直链，恒不作为跨源候选
- *   （配置 lx 脚本后由下方的可搜索扩展源承担）；kugou 已内置官方直链，默认即候选；
- * - lx 目录已加载的可搜索扩展源（脚本源本身即负责搜索 + 直链，不受平台开关约束）；
+ *   平台搜索引擎开关 search 与播放引擎开关 play（music-caps，两维默认全开，可被
+ *   env / 设置面板收敛），且内置播放引擎总开关 builtinPlay 为开启（关闭时内置通道
+ *   已取不到直链，本组整体跳过），并剔除 SELF_ONLY_ENGINE_KEYS——migu 无内置直链，
+ *   恒不作为跨源候选；kugou 已内置官方直链；
  * - 传 excludeSource 时把失败源自身剔除（避免在刚失败的同一 source 上重复现搜）。
  */
 export function crossSearchPlayableSourceKeys(
@@ -281,78 +175,12 @@ export function crossSearchPlayableSourceKeys(
   for (const s of [...SEARCH_SOURCES, ...SELF_SEARCH_SOURCES]) {
     if (!isPlatformSearchOn(s.key)) continue; // 引擎（平台开关）未开
     if (!isPlatformPlayOn(s.key)) continue; // 播放引擎未开
+    // 内置播放引擎总开关关闭：内置源已无法取直链，不收录为跨源候选
+    if (!isBuiltinPlayOn()) continue;
     if (SELF_ONLY_ENGINE_KEYS.has(s.key)) continue; // migu 无内置直链，不收录
     push(s.key);
   }
-  for (const s of lxSearchableSources()) push(s.key);
   return keys;
-}
-
-/**
- * 某内置平台曲目取直链失败时，可用的 lx 音源 source key。
- * 目录未加载时尽量拉一次；失败/无映射返回 null（离线时静默，不叠额外错误）。
- */
-export async function lxUrlFallbackSourceFor(
-  platform: string,
-  signal?: AbortSignal
-): Promise<string | null> {
-  if (!lxCatalogCache) {
-    try {
-      await fetchLxCatalog(signal);
-    } catch {
-      return null;
-    }
-  }
-  const hit = (lxCatalogCache?.urlFallbacks || []).find((e) => e.platform === platform);
-  return hit?.source ?? null;
-}
-
-/** 仅按已加载目录判断（不触发网络）：供播放流程决定是否保留旧的“仅提示换源”行为 */
-export function hasLxUrlFallbackFor(platform: string): boolean {
-  return Boolean((lxCatalogCache?.urlFallbacks || []).some((e) => e.platform === platform));
-}
-
-/** 平台曲目在 lx 音源语义下的“取链 id”（各平台脚本所需 id 形态不同） */
-function platformLxPlayId(
-  platform: string,
-  item: Pick<SearchItem, "id" | "urlId" | "lyricId">
-): string {
-  switch (platform) {
-    case "kugou": // 酷狗以 FileHash 为准（自研结果 hash 也放 urlId，兜底 lyricId）
-      return item.urlId || item.lyricId || item.id;
-    case "netease":
-    case "tencent": // QQ 以 songmid 为准
-    case "kuwo": // 酷我以 rid 为准
-    case "migu": // 咪咕以 contentId（cid）为准，缺失退回 songId
-    default:
-      return item.urlId || item.id;
-  }
-}
-
-/** 构造“音源脚本同曲换链”请求参数：id 必填，按平台补 hash/songmid，并带标题歌手便于脚本兜底 */
-function buildLxUrlFallbackQuery(
-  platform: string,
-  fallbackSource: string,
-  item: Pick<SearchItem, "id" | "urlId" | "lyricId" | "name" | "artist">,
-  br: string
-): URLSearchParams {
-  const id = platformLxPlayId(platform, item);
-  const qs = new URLSearchParams({ action: "url", source: fallbackSource, id, br });
-  if (platform === "kugou") qs.set("hash", item.urlId || item.lyricId || id);
-  if (platform === "tencent") qs.set("songmid", item.urlId || id);
-  const name = (item.name || "").trim();
-  if (name) qs.set("title", name);
-  const artist = item.artist?.find(Boolean);
-  if (artist) qs.set("artist", artist);
-  return qs;
-}
-
-/** lx 扩展源请求入口：直发 /api/music/lx，错误信息透传（无 GD 直连兜底概念） */
-async function lxProxyGet(
-  params: URLSearchParams,
-  signal?: AbortSignal
-): Promise<ProxyOkPayload> {
-  return proxyGet(params, signal, "/api/music/lx");
 }
 
 // —— 错误分类：仅 kind="down"（代理对部署出口不可用/通道层故障）才触发直连降级 ——
@@ -654,9 +482,9 @@ export async function requestResolve(
 }
 
 // —— 源通道引擎：搜索引擎 / 内容提供通道的抽象面 ——
-// 三条服务通道：gd = GD 聚合上游（同源代理优先 + 浏览器直连降级 + bin=1 字节能力），
-// lx = 洛雪生态脚本扩展源（仅同源代理，无 bin），self = 自研直连源（搜索 + kugou 官方
-// 试听直链均经 /api/music/self，无 bin；migu 无内置直链，见 SELF_ONLY_ENGINE_KEYS）。
+// 两条服务通道：gd = GD 聚合上游（同源代理优先 + 浏览器直连降级 + bin=1 字节能力），
+// self = 自研直连源（搜索 + kugou 官方试听直链均经 /api/music/self，无 bin；migu 无内置
+// 直链，见 SELF_ONLY_ENGINE_KEYS）。
 // UI 层判断“某个 source 属于哪种引擎、能否 bin 下载 / 封面取色 / 直连降级”都必须走这里
 // 的注册函数，而不是在各组件里手拼 /api/music URL 或读 isDirectUsed。未来接入新的源引擎：
 // 在此注册 kind 判定与能力即可。
@@ -666,18 +494,17 @@ export async function requestResolve(
 // tencent 曲目播放/歌词/封面仍复用 GD 直链通道，因此 tencent/netease/kuwo 的引擎通道仍是 gd。
 
 /** 源通道引擎种类（注册新引擎：在 sourceEngineKindFor 内新增判定分支） */
-export type SourceEngineKind = "gd" | "lx" | "self";
+export type SourceEngineKind = "gd" | "self";
 
 /** 单个源引擎暴露给 UI 的能力位（决定该源在当前会话可用的操作） */
 export interface SourceEngineCaps {
   kind: SourceEngineKind;
-  /** 同源 bin=1 字节代理能力（GD 源才有；lx/self 无 bin，下载 / 封面需走直链） */
+  /** 同源 bin=1 字节代理能力（GD 源才有；self 无 bin，下载 / 封面需走直链） */
   gdBytes: boolean;
 }
 
 /** source key → 所属引擎通道（未识别一律按 GD 内置契约源处理，保持向后兼容） */
 export function sourceEngineKindFor(source: string): SourceEngineKind {
-  if (isLxSourceKey(source)) return "lx";
   // 引擎通道 = 自研直连源（kugou/migu）：走 /api/music/self，无 bin
   if (SELF_CHANNEL_SOURCE_KEYS.has(source)) return "self";
   return "gd";
@@ -691,7 +518,11 @@ export function sourceEngineCapsFor(source: string): SourceEngineCaps {
 
 /** 该源无内置直链引擎时播放失败给用户的文案（migu；SELF_ONLY_ENGINE_KEYS） */
 export const NO_ENGINE_MSG =
-  "该音源暂未接入试听直链引擎，且未配置可用的兜底音源脚本；可切到网易云/QQ音乐/酷狗/酷我等音源搜索同一首歌";
+  "该音源暂未接入试听直链引擎，可切到网易云/QQ音乐/酷狗/酷我等音源搜索同一首歌";
+
+/** 内置播放引擎总开关关闭（音乐控制台 / MUSIC_BUILTIN_PLAY=off）时的取链失败文案 */
+export const BUILTIN_PLAY_OFF_MSG =
+  "本站内置播放引擎当前已停用（不再经 GD / 自研直连结取试听直链）；可在音乐控制台开启内置播放引擎后重试";
 
 /**
  * 下载入口的通道内决策结果：
@@ -725,7 +556,7 @@ export function trackDownloadSpec(opts: {
     });
     return { kind: "bin", url: `/api/music?${qs.toString()}` };
   }
-  // 其余（GD 直连模式 / lx 扩展源）：真实源地址即为可下载文件，新标签打开后另存
+  // 其余（GD 直连模式 / self 源）：真实源地址即为可下载文件，新标签打开后另存
   return {
     kind: "external",
     url: direct.url,
@@ -735,7 +566,7 @@ export function trackDownloadSpec(opts: {
 
 /**
  * 封面取色用的同源 bin 字节 URL；仅 GD 源且同源代理可用时返回非空。
- * lx 源（封面为搜索自带直链）与直连模式下返回空串，调用方据此回退“仅外部直链取色”。
+ * self 源与直连模式下返回空串，调用方据此回退“仅外部直链取色”。
  */
 export function coverBinUrl(source: string, picId: string): string {
   if (!picId || sourceEngineKindFor(source) !== "gd" || directUsed) return "";
@@ -756,7 +587,7 @@ function stampSearchLine(data: SearchData): SearchData {
 /**
  * 自研直连搜索（同源 /api/music/self）：不经 GD 上游，服务端直连各音源搜索接口。
  * 支持 source：netease/tencent/kugou/kuwo/migu（GD 通道命名；某平台是否启用受
- * MUSIC_PLATFORM_SEARCH 开关约束，默认仅 tencent 停用）。返回数据自带
+ * MUSIC_PLATFORM_SEARCH 开关约束，两维默认全开）。返回数据自带
  * line(kind=self)，翻页上限 / hasMore 由服务端计算，这里不做浏览器直连兜底（服务端已直连音源）。
  */
 async function requestSelfSearchPage(
@@ -812,7 +643,6 @@ async function requestGdSearchPage(
  * 请求指定页码的搜索结果。
  *
  * 分派顺序（同一 source 只会命中一种）：
- * - lx 扩展源 → /api/music/lx（脚本只能在 Node 侧跑，无浏览器直连兜底）；
  * - 自研直连搜索独立源 chips（kugou/migu）→ /api/music/self（仅自研）；
  * - 双通道源 netease/kuwo → 先 /api/music/self（**自研为主**）；自研通道失败时回退 GD 搜索
  *   （同源代理 → 浏览器直连，见 requestGdSearchPage），并把该源标为「本会话 GD 兜底」
@@ -825,22 +655,6 @@ export async function requestSearchPage(
   targetPage: number,
   signal: AbortSignal
 ): Promise<SearchData> {
-  // lx 扩展源
-  if (sourceEngineKindFor(src) === "lx") {
-    const qs = new URLSearchParams({
-      action: "search",
-      source: src,
-      keyword: kw,
-      page: String(targetPage),
-      count: String(PAGE_SIZE),
-    });
-    const payload = await lxProxyGet(qs, signal);
-    const pageData = payload.data as SearchData | undefined;
-    if (!pageData || !Array.isArray(pageData.items)) {
-      throw new MusicError("biz", "搜索失败，请稍后重试");
-    }
-    return pageData;
-  }
   // 自研直连搜索独立源 chips（kugou/migu）：仅走自研通道
   if (SELF_SEARCH_CHIP_KEYS.includes(src)) {
     return requestSelfSearchPage(src, kw, targetPage, signal);
@@ -930,8 +744,8 @@ function acquireAggregateSlot(signal: AbortSignal): Promise<boolean> {
 
 /**
  * 「聚合搜索」编排：对多个搜索源各自取第 1 页（复用 requestSearchPage 的分派/回退
- * 语义：lx → /api/music/lx，自研 chips / 已回退源 → /api/music/self，GD 源走代理+
- * 浏览器直连兜底），平台级并发经限流闸限制在 ≤3 路（多次触发叠加也成立）、逐源失败
+ * 语义：自研 chips / 已回退源 → /api/music/self，GD 源走代理+浏览器直连兜底），
+ * 平台级并发经限流闸限制在 ≤3 路（多次触发叠加也成立）、逐源失败
  * 隔离。结果顺序与入参 keys 无关（并发完成）；聚合排序由 music-match 内部按
  * 「内容相关度 → 跨源共识位次」决定，不依赖调用方/引擎顺序，并发乱序也稳定。
  */
@@ -990,6 +804,11 @@ export async function requestDirect(
   br: string,
   signal: AbortSignal
 ): Promise<DirectData> {
+  // 内置播放引擎总开关关闭：内置取链通道（GD 公共上游 / 自研直连 / 浏览器直连降级）
+  // 一律不再取链（与 /api/music、/api/music/self 的服务端拦截对齐），此处为防御性拦截。
+  if (!isBuiltinPlayOn()) {
+    throw new MusicError("biz", BUILTIN_PLAY_OFF_MSG);
+  }
   // self 源：migu（SELF_ONLY）无内置直链明确提示；kugou 有官方直链走自研端点
   //（避免 migu 打到 GD 后误报“未找到链接”）
   if (sourceEngineKindFor(source) === "self") {
@@ -997,14 +816,6 @@ export async function requestDirect(
       throw new MusicError("biz", NO_ENGINE_MSG);
     }
     return requestSelfPlayDirect(source, id, br, signal);
-  }
-  // lx 扩展源：改发 /api/music/lx?action=url（br 由服务端映射为 128k/320k/flac…）
-  if (sourceEngineKindFor(source) === "lx") {
-    const qs = new URLSearchParams({ action: "url", source, id, br });
-    const payload = await lxProxyGet(qs, signal);
-    const data = payload.data as DirectData | undefined;
-    if (!data?.url) throw new MusicError("biz", NOT_FOUND_MSG);
-    return data;
   }
   const qs = new URLSearchParams({ source, id, br });
   return directAfterDown(
@@ -1022,10 +833,10 @@ export async function requestDirect(
 /**
  * 播放取直链入口（点歌 / 切音质）。
  *
- * - GD 引擎源：原直链优先；失败（VIP 受限 / 404 等）时自动尝试 lx 音源脚本同曲换链；
- * - self 源（kugou / migu）：kugou 走内置官方直链（失败再试 lx 兜底）；migu（无内置直链）
- *   直接尝试 lx 音源兜底，未配置则保持 NO_ENGINE 提示；
- * - lx 源（脚本可搜源 chip）：等同原 requestDirect 直发，不叠加兜底。
+ * - GD 引擎源：走内置取链通道（代理优先 + 直连降级）；
+ * - self 源（kugou / migu）：kugou 走内置官方直链；migu（无内置直链）保持 NO_ENGINE 提示；
+ * - 内置播放引擎总开关关闭（music-caps 的 builtinPlay）：抛 BUILTIN_PLAY_OFF_MSG
+ *   （搜索维度不受影响）。
  */
 export async function requestPlayDirect(
   source: string,
@@ -1033,36 +844,14 @@ export async function requestPlayDirect(
   br: string,
   signal: AbortSignal
 ): Promise<DirectData> {
-  const kind = sourceEngineKindFor(source);
-  const tryLxFallback = async (): Promise<DirectData | null> => {
-    if (kind === "lx") return null;
-    const fallbackSource = await lxUrlFallbackSourceFor(source, signal);
-    if (!fallbackSource || fallbackSource === source) return null;
-    const qs = buildLxUrlFallbackQuery(source, fallbackSource, item, br);
-    try {
-      const payload = await lxProxyGet(qs, signal);
-      const data = payload.data as DirectData | undefined;
-      if (data?.url) return data;
-    } catch (err) {
-      if (signal.aborted) throw err;
-      // 音源兜底失败静默：沿用主通道错误信息展示
-    }
-    return null;
-  };
-  if (kind === "self" && SELF_ONLY_ENGINE_KEYS.has(source)) {
-    // migu 无内置直链：仅试 lx 音源兜底
-    const data = await tryLxFallback();
-    if (data) return data;
+  if (!isBuiltinPlayOn()) {
+    throw new MusicError("biz", BUILTIN_PLAY_OFF_MSG);
+  }
+  if (sourceEngineKindFor(source) === "self" && SELF_ONLY_ENGINE_KEYS.has(source)) {
+    // migu 无内置直链
     throw new MusicError("biz", NO_ENGINE_MSG);
   }
-  try {
-    return await requestDirect(source, item.urlId || item.id, br, signal);
-  } catch (err) {
-    if (signal.aborted) throw err;
-    const data = await tryLxFallback();
-    if (data) return data;
-    throw err;
-  }
+  return requestDirect(source, item.urlId || item.id, br, signal);
 }
 
 /** 取专辑封面真实图片 URL */
@@ -1073,10 +862,6 @@ export async function requestPic(
 ): Promise<string> {
   // self 源（kugou/migu）：无 GD 封面通道，且自研搜索结果一般不带可二次换取封面
   if (sourceEngineKindFor(source) === "self") {
-    throw new MusicError("biz", NO_COVER_MSG);
-  }
-  // lx 源封面由搜索结果自带的 picUrlDirect 直接展示，不走 GD 式 pic_id 二次换取
-  if (sourceEngineKindFor(source) === "lx") {
     throw new MusicError("biz", NO_COVER_MSG);
   }
   const qs = new URLSearchParams({ action: "pic", source, id: picId, size: "300" });
@@ -1101,16 +886,6 @@ export async function requestLyric(
   // self 源（kugou/migu）：无歌词通道，明确提示
   if (sourceEngineKindFor(source) === "self") {
     throw new MusicError("biz", "歌词获取失败（该音源暂未接入歌词通道）");
-  }
-  // lx 扩展源：改发 /api/music/lx?action=lyric
-  if (sourceEngineKindFor(source) === "lx") {
-    const qs = new URLSearchParams({ action: "lyric", source, id: lyricId });
-    const payload = await lxProxyGet(qs, signal);
-    const data = payload.data as LyricData | undefined;
-    if (!data || typeof data.lyric !== "string") {
-      throw new MusicError("biz", "歌词获取失败");
-    }
-    return data.lyric.trim();
   }
   const qs = new URLSearchParams({ action: "lyric", source, id: lyricId });
   return directAfterDown(
@@ -1169,7 +944,7 @@ export function brIsSupported(value: string): boolean {
   return BR_OPTIONS.some((o) => o.value === value);
 }
 
-/** 上游基址可读短名：GD 公共实例显示「GD 公共源」，其余按 host 展示 */
+/** 上游基址可读短名：GD 公共实例显示「GD 音乐」，其余按 host 展示 */
 export function lineBaseLabel(base: string): string {
   let host = base;
   try {
@@ -1177,7 +952,7 @@ export function lineBaseLabel(base: string): string {
   } catch {
     /* 非法 URL 保持原样展示 */
   }
-  return host === GD_PUBLIC_HOST ? "GD 公共源" : host;
+  return host === GD_PUBLIC_HOST ? "GD 音乐" : host;
 }
 
 /** 结果列表「线路」列内容：返回展示文案 / 悬浮全文 / 是否直连；无线路（如链接解析产物）返回 null */
@@ -1185,11 +960,11 @@ export function musicLineMeta(
   line?: MusicLine | null
 ): { text: string; title: string; direct: boolean } | null {
   if (!line || !line.base) return null;
-  // 自研直连搜索线路：站点服务端直连各音源搜索接口（不经 GD 上游）
+  // 站点直连搜索线路：站点服务端直连各音源搜索接口（不经 GD 上游）
   if (line.kind === "self") {
     return {
-      text: "自研直搜",
-      title: "站点自研通道直连音源搜索接口取回（不经 GD 公共源）",
+      text: "站点直连",
+      title: "站点直连音源搜索接口取回（不经 GD 音乐）",
       direct: false,
     };
   }

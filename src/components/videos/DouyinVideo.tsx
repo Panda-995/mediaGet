@@ -140,6 +140,9 @@ export default function DouyinVideo({ data }: DouyinVideoProps) {
           url={douyinData.url}
           cover={douyinData.cover}
           alt={douyinData.title || "视频封面"}
+          title={douyinData.title}
+          author={douyinData.author}
+          platform="douyin"
           accent="dy"
           tall
           inline

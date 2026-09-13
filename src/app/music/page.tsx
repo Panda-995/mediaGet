@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
+import { cookies } from "next/headers";
 import "./music.css";
 import MusicExplorer from "@/components/music/MusicExplorer";
+import { MUSIC_VIEW_KEY, normalizeMusicView } from "@/lib/music-view";
 import { siteConfig } from "@/config/site";
 
 export const metadata: Metadata = {
@@ -35,6 +37,17 @@ export const metadata: Metadata = {
   },
 };
 
-export default function MusicPage() {
-  return <MusicExplorer />;
+/**
+ * 视图偏好（`mp-music-view`，见 music-view-store）**决定首屏渲染哪块面板**，因此必须服务端可知：
+ * 只在客户端读（localStorage）会晚于首帧，刷新时先渲「发现歌曲」再跳「播放列表」，肉眼可见地闪。
+ * 这里读出 Cookie 当 `initialView` 下发，首帧即正确面板。
+ *
+ * 代价：读 Cookie 使本路由按需渲染（不再静态预渲染）。取舍见 musicEngine.md §7。
+ */
+export const dynamic = "force-dynamic";
+
+export default async function MusicPage() {
+  const store = await cookies();
+  const initialView = normalizeMusicView(store.get(MUSIC_VIEW_KEY)?.value);
+  return <MusicExplorer initialView={initialView ?? undefined} />;
 }

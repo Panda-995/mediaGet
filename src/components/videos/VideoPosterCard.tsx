@@ -4,6 +4,8 @@ import Image from "next/image";
 import { Download, Music, Pause, Play } from "lucide-react";
 import { buildVideoProxyUrl } from "@/utils/videoProxy";
 import { Button } from "@/components/ui/button";
+import type { VideoPlatformKey } from "@/config/video-platforms";
+import { useVideoMediaSession } from "./use-video-media-session";
 
 /**
  * 统一视频展示卡片（简化版）：上方封面图 + 下方「播放视频 / 下载视频」两个链接。
@@ -16,6 +18,11 @@ import { Button } from "@/components/ui/button";
  * - inline=false（默认）：封面/播放/下载均为直链新窗口打开。
  * - inline=true：封面或「播放」按钮在当前页面内嵌 <video> 播放，下载按钮在当前页面触发真实下载。
  *   适合已走代理或直链可直播的源（小红书 / B站），避免新开标签页，体验更好。
+ *
+ * 系统媒体会话（Media Session）：当前页内嵌播放时（inline 且播放器已展开）把封面与标题上报给
+ * 操作系统「正在播放」控件（锁屏 / 通知栏 / 系统媒体键，见 use-video-media-session）；多分P 跟随
+ * 当前播放项（切P即刷新元信息与封面，上下P回灌系统「上一首 / 下一首」键）。直链在新标签页里
+ * 播放的场景由那个标签页自己负责，本页不上报。
  */
 
 /** 多分P项：播放卡片内切换源用（结构与 ParsedVideoItem 子集兼容） */
@@ -77,6 +84,12 @@ interface VideoPosterCardProps {
   inline?: boolean;
   /** 多分P列表（可选）：>1 时播放卡片内显示分P切换条，播放/封面/下载跟随当前分P */
   parts?: PosterPart[];
+  /** 整体视频标题：系统媒体控件与站点标题用（缺失时不上报播放会话） */
+  title?: string;
+  /** 上传者（UP主 / 博主）：系统媒体控件第二行 */
+  author?: string;
+  /** 平台 key：系统媒体控件第三行与封面回退（品牌 logo）用 */
+  platform?: VideoPlatformKey;
 }
 
 export default function VideoPosterCard({
@@ -95,6 +108,9 @@ export default function VideoPosterCard({
   showPlay = true,
   inline = false,
   parts,
+  title,
+  author,
+  platform,
 }: VideoPosterCardProps) {
   const gradient = ACCENTS[accent];
   // 多分P：parts 存在且 >1 时启用分P切换，当前分P决定播放/封面/下载源
@@ -150,6 +166,38 @@ export default function VideoPosterCard({
     }
   };
 
+  // 系统媒体会话：仅当前页内嵌播放（inline 且播放器已展开）时上报，元信息与封面跟随当前分P
+  const canPrevPart = Boolean(partsList) && partIndex > 0;
+  const canNextPart = Boolean(partsList) && partIndex < (partsList?.length ?? 1) - 1;
+  useVideoMediaSession({
+    info:
+      inline && expanded && currentUrl
+        ? {
+            title,
+            author,
+            platform,
+            partTitle: activePart?.title,
+            sessionKey: `${partIndex}:${currentUrl}`,
+          }
+        : null,
+    coverUrl: currentCover || "",
+    playing,
+    // 快进快退的基准位置直读媒体元素，避免 timeupdate 高频重渲染整张卡片
+    getCurrentTime: () => videoRef.current?.currentTime ?? 0,
+    onPlay: () => {
+      videoRef.current?.play().catch(() => {});
+    },
+    onPause: () => videoRef.current?.pause(),
+    // 首/末分P 不给回调，系统控件就不会出现点了没反应的「上一首 / 下一首」
+    onPrev: canPrevPart ? () => handlePartChange(partIndex - 1) : undefined,
+    onNext: canNextPart ? () => handlePartChange(partIndex + 1) : undefined,
+    onSeek: (time) => {
+      const el = videoRef.current;
+      if (!el || !Number.isFinite(time)) return;
+      el.currentTime = Math.max(0, time);
+    },
+  });
+
   return (
     <div className="space-y-3">
       {/* 封面图 / 内嵌播放器 */}
@@ -195,6 +243,8 @@ export default function VideoPosterCard({
               setPlayError(false);
             }}
             onPause={() => setPlaying(false)}
+            // 播放结束不会触发 pause 事件：这里同步按钮与系统控件的播放态
+            onEnded={() => setPlaying(false)}
             onError={() => {
               setPlaying(false);
               setPlayError(true);

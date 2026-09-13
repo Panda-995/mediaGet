@@ -4,11 +4,13 @@ import {
   aggregateAndRankSearch,
   cleanMusicText,
   crossSearchKeyword,
+  dedupeSearchItems,
   isSameSong,
   musicKey,
   rankSongMatchCandidates,
   relevanceOf,
   scoreSongMatch,
+  songIdentityKey,
   splitSearchTokens,
   stripVersionSuffix,
 } from "@/lib/music-match";
@@ -33,6 +35,38 @@ describe("cleanMusicText", () => {
 describe("musicKey", () => {
   it("以 source+id 组键", () => {
     expect(musicKey({ source: "kuwo", id: "123" })).toBe("kuwo:123");
+  });
+});
+
+describe("dedupeSearchItems", () => {
+  it("同一 source+id 只留首次出现的一条，顺序不变", () => {
+    const list = [
+      song({ id: "1", name: "晴天" }),
+      song({ id: "2", name: "稻香" }),
+      song({ id: "1", name: "晴天（GD 兜底重复给出）" }),
+    ];
+    expect(dedupeSearchItems(list).map((x) => x.name)).toEqual(["晴天", "稻香"]);
+  });
+
+  it("同 id 但不同 source 属不同条目，不合并", () => {
+    const list = [
+      song({ id: "1", source: "kuwo" }),
+      song({ id: "1", source: "netease" }),
+    ];
+    expect(dedupeSearchItems(list)).toHaveLength(2);
+  });
+
+  it("缺 id 的条目按同源同一条收敛（不可播放，不留重复行）", () => {
+    const list = [song({ id: "" }), song({ id: "" }), song({ id: "1" })];
+    expect(dedupeSearchItems(list)).toHaveLength(2);
+  });
+
+  it("不修改入参，空数组安全", () => {
+    const list = [song({ id: "1" }), song({ id: "1" })];
+    const out = dedupeSearchItems(list);
+    expect(list).toHaveLength(2);
+    expect(out).not.toBe(list);
+    expect(dedupeSearchItems([])).toEqual([]);
   });
 });
 
@@ -264,5 +298,35 @@ describe("rankSongMatchCandidates（跨源现搜候选收敛）", () => {
     expect(r).toHaveLength(1);
     expect(r[0].score).toBeGreaterThanOrEqual(dup.score ?? 0);
     expect(r[0].item.album).toBe("叶惠美");
+  });
+});
+
+describe("songIdentityKey（跨源共享缓存的身份 key）", () => {
+  it("同名同歌手 → 同一 key（跨源版本才能互为候选）", () => {
+    expect(songIdentityKey({ name: "晴天", artist: ["周杰伦"] })).toBe(
+      songIdentityKey({ name: "晴天", artist: ["周杰伦"] })
+    );
+  });
+  it("版本后缀 / 括号备注不影响身份（复用同曲评分的清洗口径）", () => {
+    expect(songIdentityKey({ name: "晴天 (Live)", artist: ["周杰伦"] })).toBe(
+      songIdentityKey({ name: "晴天", artist: ["周杰伦"] })
+    );
+  });
+  it("歌手顺序不影响，但歌手不同即不同身份", () => {
+    expect(songIdentityKey({ name: "夜曲", artist: ["周杰伦", "费玉清"] })).toBe(
+      songIdentityKey({ name: "夜曲", artist: ["费玉清", "周杰伦"] })
+    );
+    expect(songIdentityKey({ name: "夜曲", artist: ["周杰伦"] })).not.toBe(
+      songIdentityKey({ name: "夜曲", artist: ["费玉清"] })
+    );
+  });
+  it("歌名不同 → 不同身份", () => {
+    expect(songIdentityKey({ name: "晴天", artist: ["周杰伦"] })).not.toBe(
+      songIdentityKey({ name: "告白气球", artist: ["周杰伦"] })
+    );
+  });
+  it("长度封顶 200（服务端 key 上限），超长歌名歌手不会把键撑爆", () => {
+    const k = songIdentityKey({ name: "x".repeat(500), artist: ["y".repeat(500)] });
+    expect(k.length).toBeLessThanOrEqual(200);
   });
 });

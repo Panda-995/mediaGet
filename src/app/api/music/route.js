@@ -229,6 +229,8 @@ export async function GET(request) {
   const effectiveFlags = await loadEffectiveMusicFlags();
   const effSearch = effectiveFlags.flags.search;
   const effPlay = effectiveFlags.flags.play;
+  // 内置播放引擎总开关（GD 公共上游取直链通道的总闸；搜索 / 歌词 / 封面不受影响）
+  const builtinPlayOn = effectiveFlags.builtinPlay.enabled !== false;
 
   // —— 参数读取与白名单校验 ——
   const action = (searchParams.get("action") || "url").trim().toLowerCase();
@@ -658,6 +660,20 @@ export async function GET(request) {
         msg: `不支持的 music source: ${source}`,
         usage,
         supportedSources: GD_SOURCE_LIST,
+      },
+      400
+    );
+  }
+  // 内置播放引擎总开关：关闭后本站不再经 GD 公共上游取任何播放直链
+  // （搜索 / 歌词 / 封面等数据通道不受影响）
+  if (!builtinPlayOn) {
+    return send(
+      {
+        code: 400,
+        msg: "内置播放引擎已停用：本站当前不提供 GD 取直链通道（可在音乐控制台或 MUSIC_BUILTIN_PLAY 开启）",
+        usage,
+        failType: MUSIC_FAILURE.SOURCE_UNAVAILABLE,
+        supportedSources: [],
       },
       400
     );

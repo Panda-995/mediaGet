@@ -9,6 +9,11 @@ import {
   setCacheResponse,
 } from "@/lib/api-utils";
 import { honeypotResponse } from "@/lib/honeypot";
+import {
+  MUSIC_CACHE_TTL,
+  readMusicCache,
+  writeMusicCache,
+} from "@/lib/music-cache-store";
 import { normalizeResult } from "@/lib/normalize-result";
 import {
   buildNeteaseDetailUrl,
@@ -122,6 +127,47 @@ async function fetchMetaJson(url, headers) {
   }
 }
 
+/** 共享详情缓存的类别命名空间（见 lib/music-cache-store.js） */
+const DETAIL_CACHE_KIND = "detail";
+
+/**
+ * 官方详情读取：进程内 5min 缓存 → 共享库长缓存（30 天，跨实例）→ 上游抓取。
+ *
+ * 为什么加中间那层：详情（歌名 / 歌手 / 专辑 / 封面）是**准静态**数据，而进程内缓存
+ * 在 CF Workers（isolate 随缘销毁）与多副本 Docker 下命中率很低；提到共享库后，
+ * 同一首歌被反复解析（分享给多个人、同一人多次打开）不再重复打上游。
+ * 注意只缓存元数据——直链带时效，绝不进任何缓存层（musicEngine.md §7.3）。
+ *
+ * @param scope         平台 key（META_CACHE_SCOPE 之一）
+ * @param songId        归一化后的平台曲目 ID
+ * @param fetchUpstream 上游抓取：返回统一形态元数据，失败返回 null
+ */
+async function loadMeta(scope, songId, fetchUpstream) {
+  const cacheKey = metaCacheKey(scope, songId);
+  const cached = getCachedResponse(cacheKey);
+  if (cached && typeof cached.meta === "object") return cached.meta;
+
+  const remote = await readMusicCache(DETAIL_CACHE_KIND, `${scope}:${songId}`);
+  if (remote.value && typeof remote.value.meta === "object") {
+    // 回填进程缓存：同一实例后续请求不再打库
+    setCacheResponse(cacheKey, { meta: remote.value.meta });
+    return remote.value.meta;
+  }
+
+  const meta = await fetchUpstream();
+  if (meta) {
+    setCacheResponse(cacheKey, { meta });
+    // 旁路写：失败只影响下次命中率，不阻断本次响应
+    void writeMusicCache(
+      DETAIL_CACHE_KIND,
+      `${scope}:${songId}`,
+      { meta, at: Date.now() },
+      MUSIC_CACHE_TTL.detail
+    );
+  }
+  return meta;
+}
+
 /** 从分享文本走到「平台 + 曲目 ID」，识别不出返回 null（含短链重定向跟随） */
 async function identifyLink(rawLink) {
   const url = extractMusicUrl(rawLink);
@@ -147,15 +193,37 @@ async function identifyLink(rawLink) {
 /**
  * 组 playable 响应。meta 为统一形态的元数据对象（null = 详情缺失，走 ID 占位标题）；
  * 直链不在本接口预取，由播放端按 item.source + id 经既有 /api/music 链路实时取。
- * 平台播放引擎开关（MUSIC_PLATFORM_PLAY）关闭时降级为 engine-missing，
- * 避免「能解析但播放引擎已停用」被误报成 playable。
+ * 内置播放引擎总开关（MUSIC_BUILTIN_PLAY）关闭、或平台播放引擎开关（MUSIC_PLATFORM_PLAY）
+ * 关闭时降级为 engine-missing，避免「能解析但播放引擎已停用」被误报成 playable。
  */
 function playableResponse(
   corsHeaders,
   { platform, songId, meta, placeholderPrefix },
   startTime,
-  playTable
+  playTable,
+  builtinPlayOn
 ) {
+  if (!builtinPlayOn) {
+    const label = MUSIC_PLATFORM_LABEL[platform];
+    console.log(
+      `[music-resolve] time=${beijingNow()} code=200 status=engine-missing platform=${platform} songId=${songId} duration=${
+        Date.now() - startTime
+      }ms`
+    );
+    return Response.json(
+      {
+        code: 200,
+        msg: "识别成功，内置播放引擎已停用",
+        data: {
+          status: "engine-missing",
+          platform,
+          songId,
+          message: `已识别为「${label}」歌曲（ID：${songId}），但本站内置播放引擎当前已停用（可在音乐控制台或 MUSIC_BUILTIN_PLAY 开启）`,
+        },
+      },
+      { status: 200, headers: corsHeaders }
+    );
+  }
   if (!isPlatformPlayEnabled(platform, playTable)) {
     const label = MUSIC_PLATFORM_LABEL[platform];
     console.log(
@@ -240,8 +308,9 @@ export async function GET(request) {
     );
   }
 
-  // 加载生效平台开关矩阵
-  const { flags: { play: effPlay } } = await loadEffectiveMusicFlags();
+  // 加载生效平台开关矩阵 + 内置播放引擎总开关
+  const { flags: { play: effPlay }, builtinPlay } = await loadEffectiveMusicFlags();
+  const builtinPlayOn = builtinPlay.enabled !== false;
 
   const rawLink = String(searchParams.get("link") ?? "").slice(0, LINK_MAX_LEN);
   if (!rawLink.trim()) {
@@ -288,32 +357,30 @@ export async function GET(request) {
       );
     }
 
-    let meta = null;
-    const cacheKey = metaCacheKey(META_CACHE_SCOPE.netease, normalizedSongId);
-    const cached = getCachedResponse(cacheKey);
-    if (cached && typeof cached.meta === "object") {
-      meta = cached.meta;
-    } else {
-      try {
-        const res = await fetch(buildNeteaseDetailUrl(normalizedSongId), {
-          headers: NETEASE_META_HEADERS,
-          signal: AbortSignal.timeout(NETEASE_META_TIMEOUT),
-        });
-        const json = res.ok ? await res.json().catch(() => null) : null;
-        const result = parseNeteaseDetailJson(json);
-        if (result.ok) {
-          meta = result.meta;
-          setCacheResponse(cacheKey, { meta: result.meta });
-        } else if (!res.ok || result.kind === "bad-data") {
-          // 详情通道异常（HTTP 错误 / 非 JSON / 风控页）属于“元数据缺失”，走降级标题
-          logger.warn(
-            `netease detail upstream unusable status=${res.status} songId=${normalizedSongId}`
-          );
+    const meta = await loadMeta(
+      META_CACHE_SCOPE.netease,
+      normalizedSongId,
+      async () => {
+        try {
+          const res = await fetch(buildNeteaseDetailUrl(normalizedSongId), {
+            headers: NETEASE_META_HEADERS,
+            signal: AbortSignal.timeout(NETEASE_META_TIMEOUT),
+          });
+          const json = res.ok ? await res.json().catch(() => null) : null;
+          const result = parseNeteaseDetailJson(json);
+          if (result.ok) return result.meta;
+          if (!res.ok || result.kind === "bad-data") {
+            // 详情通道异常（HTTP 错误 / 非 JSON / 风控页）属于“元数据缺失”，走降级标题
+            logger.warn(
+              `netease detail upstream unusable status=${res.status} songId=${normalizedSongId}`
+            );
+          }
+        } catch (error) {
+          logger.warn(`netease detail upstream error: ${error.message}`);
         }
-      } catch (error) {
-        logger.warn(`netease detail upstream error: ${error.message}`);
+        return null;
       }
-    }
+    );
 
     return playableResponse(
       corsHeaders,
@@ -324,7 +391,8 @@ export async function GET(request) {
         placeholderPrefix: FALLBACK_TITLE_PREFIX.netease,
       },
       startTime,
-      effPlay
+      effPlay,
+      builtinPlayOn
     );
   }
 
@@ -340,29 +408,23 @@ export async function GET(request) {
       );
     }
 
-    let meta = null;
-    const cacheKey = metaCacheKey(META_CACHE_SCOPE.tencent, songId);
-    const cached = getCachedResponse(cacheKey);
-    if (cached && typeof cached.meta === "object") {
-      meta = cached.meta;
-    } else {
+    const meta = await loadMeta(META_CACHE_SCOPE.tencent, songId, async () => {
       const json = await fetchMetaJson(
         buildSongInfoUrl({ songmid: songId }),
         QQ_META_HEADERS
       );
       const parsedMeta = parseSongInfo(json);
-      if (parsedMeta) {
-        meta = {
-          name: parsedMeta.name,
-          artist: parsedMeta.singers,
-          album: parsedMeta.albumName,
-          coverUrl: buildAlbumCoverUrl(parsedMeta.albumMid),
-        };
-        setCacheResponse(cacheKey, { meta });
-      } else {
+      if (!parsedMeta) {
         logger.warn(`qq songinfo unusable or not found songmid=${songId}`);
+        return null;
       }
-    }
+      return {
+        name: parsedMeta.name,
+        artist: parsedMeta.singers,
+        album: parsedMeta.albumName,
+        coverUrl: buildAlbumCoverUrl(parsedMeta.albumMid),
+      };
+    });
 
     return playableResponse(
       corsHeaders,
@@ -373,7 +435,8 @@ export async function GET(request) {
         placeholderPrefix: FALLBACK_TITLE_PREFIX.tencent,
       },
       startTime,
-      effPlay
+      effPlay,
+      builtinPlayOn
     );
   }
 
@@ -390,24 +453,18 @@ export async function GET(request) {
       );
     }
 
-    let meta = null;
-    const cacheKey = metaCacheKey(META_CACHE_SCOPE.kuwo, normalizedRid);
-    const cached = getCachedResponse(cacheKey);
-    if (cached && typeof cached.meta === "object") {
-      meta = cached.meta;
-    } else {
+    const meta = await loadMeta(META_CACHE_SCOPE.kuwo, normalizedRid, async () => {
       const json = await fetchMetaJson(
         buildKuwoInfoUrl(normalizedRid),
         KUWO_META_HEADERS
       );
       const parsedMeta = parseKuwoInfo(json);
-      if (parsedMeta.ok) {
-        meta = parsedMeta.meta;
-        setCacheResponse(cacheKey, { meta: parsedMeta.meta });
-      } else {
+      if (!parsedMeta.ok) {
         logger.warn(`kuwo songinfo unusable or not found rid=${normalizedRid}`);
+        return null;
       }
-    }
+      return parsedMeta.meta;
+    });
 
     return playableResponse(
       corsHeaders,
@@ -418,7 +475,8 @@ export async function GET(request) {
         placeholderPrefix: FALLBACK_TITLE_PREFIX.kuwo,
       },
       startTime,
-      effPlay
+      effPlay,
+      builtinPlayOn
     );
   }
 
@@ -435,12 +493,7 @@ export async function GET(request) {
       );
     }
 
-    let meta = null;
-    const cacheKey = metaCacheKey(META_CACHE_SCOPE.kugou, normalizedHash);
-    const cached = getCachedResponse(cacheKey);
-    if (cached && typeof cached.meta === "object") {
-      meta = cached.meta;
-    } else {
+    const meta = await loadMeta(META_CACHE_SCOPE.kugou, normalizedHash, async () => {
       // getSongInfo 免登录即可返回 songName/singers/album_img（VIP 曲同样带元数据）
       const json = await fetchMetaJson(buildKugouPlayUrl(normalizedHash), {
         "User-Agent":
@@ -448,18 +501,17 @@ export async function GET(request) {
         Accept: "application/json, text/plain, */*",
       });
       const songInfoMeta = parseKugouSongInfoMeta(json);
-      if (songInfoMeta.name) {
-        meta = {
-          name: songInfoMeta.name,
-          artist: songInfoMeta.artists,
-          album: songInfoMeta.album,
-          coverUrl: songInfoMeta.coverUrl,
-        };
-        setCacheResponse(cacheKey, { meta });
-      } else {
+      if (!songInfoMeta.name) {
         logger.warn(`kugou getSongInfo unusable or not found hash=${normalizedHash}`);
+        return null;
       }
-    }
+      return {
+        name: songInfoMeta.name,
+        artist: songInfoMeta.artists,
+        album: songInfoMeta.album,
+        coverUrl: songInfoMeta.coverUrl,
+      };
+    });
 
     return playableResponse(
       corsHeaders,
@@ -470,7 +522,8 @@ export async function GET(request) {
         placeholderPrefix: FALLBACK_TITLE_PREFIX.kugou,
       },
       startTime,
-      effPlay
+      effPlay,
+      builtinPlayOn
     );
   }
 

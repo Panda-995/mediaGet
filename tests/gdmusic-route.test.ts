@@ -162,7 +162,7 @@ describe("GET /api/music（通用音乐源获取）", () => {
 
     const res = await GET(
       new Request(
-        // tencent 播放引擎默认停用会被平台开关拦截；改用默认开启的 kuwo 验证 fmt=text 契约
+        // 用 kuwo 验证 fmt=text 契约（该源两维开关默认全开，不受平台开关拦截）
         "http://127.0.0.1/api/music?source=kuwo&id=777777&br=320&fmt=text",
         { headers: { "x-forwarded-for": "203.0.113.42" } }
       )
@@ -734,5 +734,71 @@ describe("多基址链（MUSIC_API_BASES）：主源不可用时自动切换", (
     expect(json.code).toBe(502);
     expect(json.failType).toBe("sources-down");
     expect(global.fetch).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("内置播放引擎总开关（MUSIC_BUILTIN_PLAY=off）", () => {
+  const originalFetch = global.fetch;
+
+  afterEach(() => {
+    global.fetch = originalFetch;
+    vi.unstubAllEnvs();
+  });
+
+  it("action=url 被总闸拦截：400 + source-unavailable + supportedSources 空，且不发上游请求", async () => {
+    const fetchSpy = vi.fn();
+    global.fetch = fetchSpy;
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+
+    const res = await GET(
+      new Request("http://127.0.0.1/api/music?source=netease&id=1&br=128", {
+        headers: { "x-forwarded-for": "203.0.113.71" },
+      })
+    );
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.failType).toBe("source-unavailable");
+    expect(json.msg).toContain("MUSIC_BUILTIN_PLAY");
+    expect(json.supportedSources).toEqual([]);
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  it("action=search 不受总开关影响（搜索维度保留）", async () => {
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify([
+          { id: "9", name: "总开关搜索保留", artist: ["测试"], url_id: "9", source: "netease" },
+        ]),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const res = await GET(
+      new Request(
+        "http://127.0.0.1/api/music?action=search&source=netease&keyword=%E6%80%BB%E5%BC%80%E5%85%B3%E6%90%9C%E7%B4%A2%E4%BF%9D%E7%95%99",
+        { headers: { "x-forwarded-for": "203.0.113.72" } }
+      )
+    );
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.items[0].name).toBe("总开关搜索保留");
+  });
+
+  it("action=lyric / action=pic 数据通道不受总开关影响", async () => {
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+    global.fetch = vi.fn(async () =>
+      new Response(
+        JSON.stringify({ lyric: "[00:00.00]总开关解析保留" }),
+        { status: 200, headers: { "content-type": "application/json" } }
+      )
+    );
+
+    const res = await GET(
+      new Request("http://127.0.0.1/api/music?action=lyric&source=netease&id=88871", {
+        headers: { "x-forwarded-for": "203.0.113.73" },
+      })
+    );
+    expect(res.status).toBe(200);
   });
 });

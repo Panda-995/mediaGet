@@ -29,9 +29,8 @@
 ### 音乐解析（`/music`）
 
 - 多源聚合在线搜歌 / 试听 / 播放 / 滚动歌词 / 封面 / 下载
-- 默认上游覆盖网易云 / 酷我 / JOOX 等曲库（GD 契约，支持多基址回退）；内置腾讯(QQ音乐) / 酷狗 / 咪咕 **自研直连搜索** chips（服务器直连各家搜歌，网易云 / 酷我在 GD 通道不可用时自动回退该通道）；并支持洛雪（lx-music）生态自定义音源扩展；支持**聚合搜索**：一次并发搜索全部可用音源，跨源同曲自动去重、按关键词相关度打分排序展示（单源搜索照旧保留）。平台「搜索引擎 / 播放引擎」为部署可配开关（`MUSIC_PLATFORM_SEARCH` / `MUSIC_PLATFORM_PLAY`，默认 QQ 搜索停用、QQ/酷狗/咪咕播放停用）
-- 网易云 / QQ音乐 / 酷我 歌曲链接可一键解析为单曲（元数据 + 播放 / 下载，QQ 受播放引擎开关约束、默认返回 `engine-missing`，部署侧放开后即可播放）；酷狗链接已可识别、直链引擎待接入；酷狗 / 咪咕自研搜索结果默认仅搜索识别——配置洛雪聚合音源脚本后，点播 / 切音质会自动改由音源脚本按同曲 hash/id 换直链试听
-- **洛雪自定义音源接入**：单文件洛雪协议音源脚本（qdy / qsvip 类）可经 `MUSIC_LX_SCRIPTS`（URL / 本地路径，可多个）、`MUSIC_LX_SCRIPTS_DIR`（脚本目录）或直接放进本地 `.lxref/scripts/`（开发本机“放入即生效”，仓库默认不随附脚本，Docker 需自行内置或运行时挂载，见下方部署）加载；脚本源码 TTL 内缓存、目录变化下次自动生效，播放失败时也会把这些扩展源纳入“跨源现搜”换源兜底；另支持「平台→音源脚本取直链兜底」：netease/tencent/kuwo/kugou/migu 曲目在自身直链失败（VIP 受限等）或无内置直链时，自动改由已注册的对应音源脚本按同曲 id/hash/songmid 换链（默认映射 wy/tx/kw/kg/mg，可用 `MUSIC_LX_URL_FALLBACKS` 增改或关闭）
+- 默认上游覆盖网易云 / 酷我 / JOOX 等曲库（GD 契约，支持多基址回退）；内置腾讯(QQ音乐) / 酷狗 / 咪咕 **自研直连搜索** chips（服务器直连各家搜歌，网易云 / 酷我在 GD 通道不可用时自动回退该通道）；支持**聚合搜索**：一次并发搜索全部可用音源，跨源同曲自动去重、按关键词相关度打分排序展示（单源搜索照旧保留）。平台「搜索引擎 / 播放引擎」为部署可配开关（`MUSIC_PLATFORM_SEARCH` / `MUSIC_PLATFORM_PLAY`，两维默认 6 平台全开，可用 env 黑名单或音乐页齿轮进入的 `/music/settings` 设置页（需登录）收敛）；另有独立于平台矩阵的**内置播放引擎总开关**（站点自带取直链通道 GD / 自研直连的总闸，`MUSIC_BUILTIN_PLAY` 或设置页顶部开关，默认开启——关闭后取试听直链一律被拦，**搜索 / 歌词 / 封面 / 链接识别不受影响**；`MUSIC_BUILTIN_PLAY=off` 为运维终闸，设置页显示「部署锁定」不可再开启）
+- 网易云 / QQ音乐 / 酷我 歌曲链接可一键解析为单曲（元数据 + 播放 / 下载，QQ 受播放引擎开关约束——默认放开，若部署侧停用则该链接回 `engine-missing`）；酷狗链接解析引擎待接入；咪咕自研搜索结果默认仅搜索识别（无内置直链引擎）
 
 ### 站点
 
@@ -81,7 +80,16 @@ docker build -t mediaget:latest .
 docker run -d -p 3000:3000 --env-file .env mediaget:latest
 ```
 
-仓库默认不随附洛雪(lx)音源脚本（第三方脚本属不可信代码，需自行准备并确认可信）。需要启用时：本地开发可直接把脚本放进根目录 `.lxref/scripts/`，启动即自动加载；Docker 部署建议运行时挂载 `MUSIC_LX_SCRIPTS_DIR`（如 `docker run -v /path/to/scripts:/lx-scripts -e MUSIC_LX_SCRIPTS_DIR=/lx-scripts ...`），或在 `Dockerfile` 中自行加一行 `.lxref/scripts` 的 COPY（见文件内注释）随镜像内置。
+## 平台引擎设置（可选，独立路由 + 登录鉴权）
+
+不改代码、不重新部署也能调整「平台搜索引擎 / 播放引擎」开关、「内置播放引擎总开关」与「自动换源」行为：配好 `TURSO_DB_URL` + `TURSO_AUTH_TOKEN`（存配置文档）与 `SETTINGS_API_KEY`（写入密钥）后，音乐页内容区右上角齿轮跳转到 **`/music/settings`**（专用设置页）→ 改完点保存即全站生效（多副本部署最坏 15s 传播延迟，无乐观锁，单管理员场景适用）。
+
+- **登录鉴权**：直接访问 `/music/settings` 会被服务端重定向到 `/music/settings/login`；输入 `SETTINGS_API_KEY` 通过后，服务端下发 **HMAC 签名会话 Cookie**（`mp_settings_session`，httpOnly、SameSite=Lax、默认 12h），期间刷新 / 切页保持登录；页面右上角「退出登录」清除会话。前端不落盘密钥。写入请求（`PUT` / `DELETE /api/music/caps`）同时接受该会话 Cookie 与 `Authorization: Bearer <SETTINGS_API_KEY>`（脚本 / curl 路径）。
+- **优先级**：设置页写入的配置文档覆盖 env；env 的 `MUSIC_PLATFORM_SEARCH_DISABLED` / `MUSIC_PLATFORM_PLAY_DISABLED` / `MUSIC_PLATFORM_OFF`（平台级）与 `MUSIC_BUILTIN_PLAY=off`（内置播放引擎总开关）始终压在最后（终闸），被锁定的平台槽位 / 总开关在页面上灰显「部署锁定」且无法开启。
+- **降级**：未配置 Turso 或 `SETTINGS_API_KEY` 时页面只读并给出原因（未配密钥则无法登录，`503` / `403`），听歌功能完全不受影响；存储抖动 / 文档损坏时服务端回落 env 基线继续供曲，只有写入返回 `503`。
+- **恢复**：页面「恢复部署基线」删除配置文档，回到环境变量基线。
+
+详见 `API.md` §12.7。
 
 ## 许可证
 

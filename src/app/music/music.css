@@ -327,27 +327,21 @@
   font-weight: 600;
   box-shadow: 0 3px 12px color-mix(in srgb, var(--sc, var(--mp-primary)) 16%, transparent);
 }
-/* lx 脚本扩展源 chip：无品牌 logo，用虚线边与彩色圆点与内置源区分 */
-.mp-src-chip.mp-src-chip-ext { border-style: dashed; }
-.mp-src-chip.mp-src-chip-ext.is-active { border-style: solid; }
 .mp-src-chip.mp-src-chip-ext .dot {
   width: 8px;
   height: 8px;
   box-shadow: 0 0 6px color-mix(in srgb, var(--sc) 70%, transparent);
 }
-/* 内置自研直连搜索源 chip：品牌色实心圆点（区别于 GD 内置源的 logo 与 lx 扩展源的虚线边） */
+/* 内置自研直连搜索源 chip：正常走平台品牌 logo（kugou / migu / tencent 均已收录）；
+   仅当某源缺品牌 SVG 时才落到这里的品牌色实心圆点兜底 */
 .mp-src-chip.mp-src-chip-self .dot {
   width: 8px;
   height: 8px;
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 16%, transparent);
 }
-/* 「聚合搜索」伪 chip（行首，非真实音源）：品牌主色方形点 + 圆环，与平台圆点区分 */
-.mp-src-chip.mp-src-chip-agg .dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 3px;
-  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mp-primary) 16%, transparent);
-}
+/* 「聚合搜索」伪 chip（行首，非真实音源）：图标改用 public/logos/aggregate.svg 的
+   14px <img>（多路音源汇聚图示），与平台 logo 同尺寸 —— 不再需要自绘圆点。
+   mp-src-chip-agg 保留为该伪 chip 的样式钩子（选中态沿用 .is-active 的主色描边/底色）。 */
 
 .mp-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 22px; }
 .mp-tag {
@@ -361,6 +355,72 @@
   transition: all 0.15s;
 }
 .mp-tag:hover { background: var(--mp-hover); color: var(--text-primary); }
+
+/* 最近搜索（本机缓存，见 search-history.ts）：搜索框下方一行历史词，与热门标签同处一区。
+   历史词用轻填充胶囊区分于热门标签的透明文字按钮，胶囊内右侧带删除钮，行尾一个「清空」。
+   删除钮不做 hover 才显形——触屏没有 hover，常显（低透明度）才点得到。 */
+.mp-hist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(620px, 100%);
+  margin-top: 22px;
+}
+.mp-hist-cap { font-size: 12px; color: var(--text-muted); letter-spacing: 0.2px; }
+.mp-hist-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  background: var(--mp-hover);
+  transition: background 0.15s;
+}
+.mp-hist-chip:hover { background: color-mix(in srgb, var(--mp-primary) 12%, var(--mp-hover)); }
+.mp-hist-kw {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 5px 4px 5px 10px;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.mp-hist-chip:hover .mp-hist-kw { color: var(--text-primary); }
+.mp-hist-del {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.mp-hist-del:hover,
+.mp-hist-del:focus-visible { opacity: 1; background: var(--mp-hover); color: var(--text-primary); }
+.mp-hist-del svg { width: 12px; height: 12px; }
+.mp-hist-clear {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mp-hist-clear:hover { background: var(--mp-hover); color: var(--text-primary); }
 
 /* 轨道列表（歌名 / 作者 / 专辑 / 平台 分列）。
    列头 .mp-colhead 独立于滚动区之上（不在 .mp-scroll 内）常驻显示，
@@ -514,13 +574,14 @@
 .mp-cell-src svg,
 .mp-cell-src img { flex: none; }
 
-/* 线路列：标注本页结果取回通道（同源代理命中哪个上游基址 / 浏览器直连），多页翻页时各行可能不同 */
+/* 线路列：标注本页结果取回通道（同源代理命中哪个上游基址 / 浏览器直连），多页翻页时各行可能不同。
+   字号与其余列（平台/作者/专辑/列头）保持 13px 一致，仅圆点区分代理 / 直连 */
 .mp-cell-line {
   display: inline-flex;
   align-items: center;
   gap: 6px;
   min-width: 0;
-  font-size: 12px;
+  font-size: 13px;
   color: var(--text-secondary);
 }
 .mp-cell-line .mp-line-dot {
@@ -626,7 +687,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 11px;
+  font-size: 13px;
   letter-spacing: 2px;
   color: var(--text-muted);
   font-weight: 700;
@@ -641,9 +702,26 @@
   margin: 0 auto 16px;
   position: relative;
 }
+/* 圆封面外圈「音浪」：原生 Canvas 画的伪频谱环（128 根细齿，几何与动态见
+   pseudo-spectrum.tsx）。齿根紧贴封面边缘、沿半径只向外伸缩（齿身不带斜度），
+   播放时整支波形绕圆心匀速转 + 约每秒一次的鼓点脉冲（波峰跟着往外冲），
+   暂停时落回一圈静止环且不再占动画帧。
+   框取封面 120%（不是刚好包住音浪）：多出来的一圈余量留给 CSS 的 drop-shadow 光晕，
+   否则最外层光晕会被画布自身边界硬切；120% 必须与组件里的 FRAME 常量保持一致。
+   Canvas 自己按 dpr 出图，这里的尺寸只管布局。 */
+.mp-spectrum {
+  position: absolute;
+  left: -10%;
+  top: -10%;
+  width: 120%;
+  height: 120%;
+  pointer-events: none;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--mp-primary) 40%, transparent));
+}
+/* 圆形封面：与整页歌词的「黑胶唱盘」形态保持一致（.mplp-cover 同为圆盘） */
 .mp-artframe {
   position: relative;
-  border-radius: 14px;
+  border-radius: 50%;
   overflow: hidden;
   aspect-ratio: 1 / 1;
   background: linear-gradient(150deg, var(--glass-3), var(--glass-2));
@@ -666,7 +744,8 @@
 .mp-art-hint {
   position: absolute;
   left: 50%;
-  bottom: 12px;
+  /* 圆形封面下，胶囊需上移：贴到圆底边时会被圆弧裁掉左右下角（最窄处 170px 直径） */
+  bottom: 22px;
   transform: translate(-50%, 6px);
   display: flex;
   align-items: center;
@@ -2466,3 +2545,845 @@
   .mp-alt-card { max-height: calc(100vh - 28px); }
   .mp-alt-src { max-width: 90px; }
 }
+
+/* ---------- 内容区顶部功能区右侧：平台引擎设置入口（齿轮） ---------- */
+.mp-tools-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-left: 8px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--glass-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.mp-tools-btn:hover { color: var(--text-primary); background: var(--mp-hover); }
+.mp-tools-btn:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-tools-btn svg { width: 15px; height: 15px; }
+
+/* ============================================================
+   平台引擎设置（共享卡片）：A 平台引擎 6×2 矩阵 /
+   B 自动换源四项配置 / C 内置播放引擎总开关 /
+   D 运行状态 / E 底部操作条。视觉语言对齐 .mp-info-* 与 .mp-alt-*。
+   卡片同时服务专用设置页 /music/settings（.is-page 铺宽）与登录页表单。
+   ============================================================ */
+.mp-settings-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 78;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(5px) saturate(120%);
+  -webkit-backdrop-filter: blur(5px) saturate(120%);
+  animation: mp-info-fade 0.16s ease-out;
+}
+.dark .mp-settings-mask { background: rgba(0, 0, 0, 0.55); }
+
+.mp-settings-card {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+  animation: mp-info-pop 0.2s cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+
+.mp-settings-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 20px 22px 12px;
+}
+.mp-settings-headtext { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.mp-settings-caption {
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text-primary);
+}
+
+.mp-settings-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mp-settings-close:hover { color: var(--text-primary); background: var(--mp-hover); }
+.mp-settings-close:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-settings-close svg { width: 15px; height: 15px; }
+
+/* 只读横幅（未配置 Turso / 未启用写入） */
+.mp-settings-banner {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  margin: 0 22px 4px;
+  padding: 8px 11px;
+  border-radius: 10px;
+  background: rgba(180, 83, 9, 0.1);
+  color: #b45309;
+  font-size: 12px;
+}
+.dark .mp-settings-banner { background: rgba(251, 191, 36, 0.12); color: #fbbf24; }
+.mp-settings-banner svg { width: 14px; height: 14px; flex: none; }
+
+.mp-settings-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding: 4px 22px 8px; }
+
+.mp-settings-sec + .mp-settings-sec {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid var(--mp-divider);
+}
+.mp-settings-sectitle {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 8px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+/* A/B 共用：列表容器与列表行 */
+.mp-list {
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--background) 55%, transparent);
+}
+.mp-list-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 16px;
+  transition: background 0.12s, opacity 0.15s;
+}
+.mp-list-item + .mp-list-item { border-top: 1px solid var(--mp-divider); }
+.mp-list-item:hover { background: var(--mp-hover); }
+.mp-list-item.is-off { opacity: 0.5; }
+.mp-list-ic {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  border-radius: 9px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+}
+.mp-list-ic svg { width: 16px; height: 16px; }
+.mp-list-text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1 1 auto; }
+.mp-list-title { font-size: 13.5px; font-weight: 600; color: var(--text-primary); }
+.mp-list-desc { font-size: 11.5px; line-height: 1.45; color: var(--text-muted); }
+
+/* C/D 区块：卡片头计数胶囊、内联标签、行尾状态胶囊与图标态 */
+.mp-settings-sectag {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+.mp-settings-secreload { margin-left: auto; height: 28px; padding: 0 10px; font-size: 12px; }
+.mp-settings-tag {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--mp-primary) 14%, transparent);
+  color: var(--mp-primary);
+  font-size: 10.5px;
+  font-weight: 600;
+  vertical-align: middle;
+}
+.mp-settings-tag.is-muted { background: var(--mp-soft); color: var(--text-muted); }
+.mp-settings-pill {
+  flex: none;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+.mp-settings-pill.is-ok {
+  background: color-mix(in srgb, #15803d 16%, transparent);
+  color: #15803d;
+}
+.mp-settings-pill.is-off {
+  background: color-mix(in srgb, #dc2626 14%, transparent);
+  color: #dc2626;
+}
+.mp-list-ic.is-ok {
+  background: color-mix(in srgb, #15803d 16%, transparent);
+  color: #15803d;
+}
+.mp-list-ic.is-bad {
+  background: color-mix(in srgb, #dc2626 14%, transparent);
+  color: #dc2626;
+}
+.dark .mp-settings-pill.is-ok,
+.dark .mp-list-ic.is-ok { color: #4ade80; }
+.dark .mp-settings-pill.is-off,
+.dark .mp-list-ic.is-bad { color: #f87171; }
+
+/* C 行：行尾「接口详情」展开按钮 + 展开后的子级明细（默认全部收起） */
+.mp-settings-expand {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.12s, color 0.12s;
+}
+.mp-settings-expand svg { width: 15px; height: 15px; transition: transform 0.15s; }
+.mp-settings-expand.is-open svg { transform: rotate(90deg); }
+.mp-settings-expand:hover { background: var(--mp-soft); color: var(--text-primary); }
+.mp-settings-expand:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+
+/* 展开区：缩进对齐所属行的文字列；上下各保留分隔线（展开行打断 .mp-list-item + 选择器） */
+.mp-list-sub,
+.mp-list-sub + .mp-list-item { border-top: 1px solid var(--mp-divider); }
+.mp-list-sub {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 16px 10px 58px;
+  background: color-mix(in srgb, var(--mp-soft) 45%, transparent);
+}
+.mp-settings-subitem {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+.mp-settings-subkey {
+  flex: none;
+  min-width: 44px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-align: center;
+}
+.mp-settings-subname { flex: none; font-weight: 600; color: var(--text-primary); }
+.mp-settings-subdesc { min-width: 0; }
+.mp-settings-subempty { font-size: 11px; color: var(--text-muted); }
+
+/* A 行：平台名 + 两个引擎开关（「搜索/播放」文字标签 + pill 滑块） */
+.mp-engine-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-engine-slots {
+  display: inline-flex;
+  align-items: center;
+  gap: 16px;
+  flex: none;
+}
+.mp-engine-slot {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+/* 平台行：每列宽度固定（锁图标位 + gap + 开关），开关一律贴右 → 各行列与表头列对齐 */
+.mp-engine-item .mp-engine-slot {
+  width: 58px;
+  justify-content: flex-end;
+}
+.mp-engine-slotic { width: 13px; height: 13px; flex: none; }
+/* 引擎列名（仅表头使用）：与开关同宽并居中，故正对下方开关；字号/颜色与行内主文字统一 */
+.mp-engine-slotlabel {
+  flex: none;
+  width: 38px;
+  font-size: 13.5px;
+  font-weight: 600;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--text-primary);
+}
+.mp-engine-slot.is-on { color: var(--text-primary); }
+.mp-engine-slot.is-locked { color: var(--text-muted); }
+
+/* A 列标题行：与各行共用 .mp-engine-slots / .mp-engine-slot 布局，
+   列宽与行内一致（58px / 页面态 64px），列名盒等于开关宽并贴右，故与下方开关同心。
+   字号与颜色均取行内主文字档（13.5px / --text-primary），与 .mp-engine-name 一致 */
+.mp-engine-head {
+  pointer-events: none;
+  padding-top: 9px;
+  padding-bottom: 9px;
+  background: color-mix(in srgb, var(--mp-soft) 40%, transparent);
+}
+.mp-engine-headic { width: 30px; height: 30px; flex: none; }
+.mp-engine-headname {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+  color: var(--text-primary);
+}
+/* 表头列：与行内列同宽，列名贴右与开关同心 */
+.mp-engine-head .mp-engine-slot {
+  width: 58px;
+  justify-content: flex-end;
+  gap: 0;
+}
+
+/* 自研 pill 开关（矩阵槽位与自动换源共用） */
+.mp-settings-sw {
+  position: relative;
+  flex: none;
+  width: 38px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  cursor: pointer;
+  transition: background 0.16s;
+}
+.mp-settings-knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+  transition: transform 0.16s;
+}
+.mp-settings-sw.is-on { background: var(--mp-primary); }
+.mp-settings-sw.is-on .mp-settings-knob { transform: translateX(16px); }
+.mp-settings-sw.is-locked {
+  background: transparent;
+  box-shadow: inset 0 0 0 1.5px var(--mp-line);
+}
+.mp-settings-sw.is-locked .mp-settings-knob { background: var(--text-muted); box-shadow: none; }
+.mp-settings-sw:disabled { opacity: 0.42; cursor: not-allowed; }
+.mp-settings-sw:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 2px; }
+
+/* B. 自动换源配置行 */
+.mp-settings-rows { display: flex; flex-direction: column; }
+.mp-settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 9px 0;
+}
+.mp-settings-row + .mp-settings-row { border-top: 1px solid var(--mp-divider); }
+.mp-settings-rowtext { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.mp-settings-label { font-size: 12.5px; font-weight: 500; color: var(--text-primary); }
+.mp-settings-desc { font-size: 11px; line-height: 1.45; color: var(--text-muted); }
+.mp-settings-row.is-off .mp-settings-label,
+.mp-settings-row.is-off .mp-settings-desc { opacity: 0.55; }
+
+.mp-settings-stepper { display: inline-flex; align-items: center; gap: 4px; flex: none; }
+.mp-settings-step {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--glass-2);
+  color: var(--text-primary);
+  font-size: 15px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+.mp-settings-step:hover:not(:disabled) { background: var(--mp-hover); }
+.mp-settings-step:disabled { opacity: 0.4; cursor: not-allowed; }
+.mp-settings-num {
+  width: 52px;
+  height: 26px;
+  padding: 0 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--glass-2);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  text-align: center;
+}
+.mp-settings-num.is-bad { border-color: #dc2626; }
+.mp-settings-num:disabled { opacity: 0.42; cursor: not-allowed; }
+
+/* C. 底部操作条 */
+.mp-settings-foot {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px 22px 18px;
+  border-top: 1px solid var(--mp-divider);
+}
+.mp-settings-status { min-height: 16px; }
+.mp-settings-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+.mp-settings-msg.is-err { color: #dc2626; }
+.dark .mp-settings-msg.is-err { color: #f87171; }
+.mp-settings-msg.is-ok { color: #15803d; }
+.dark .mp-settings-msg.is-ok { color: #4ade80; }
+.mp-settings-msg svg { width: 13px; height: 13px; flex: none; }
+.mp-settings-auth {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 8px;
+  padding-left: 8px;
+  border-left: 1px solid var(--mp-divider);
+  color: var(--text-muted);
+}
+.mp-settings-auth svg { width: 12px; height: 12px; }
+
+/* 内联密钥输入行（点「解锁并保存」时展开，不弹二层弹窗） */
+.mp-settings-keyrow { display: flex; align-items: center; gap: 8px; }
+.mp-settings-keyicon { width: 15px; height: 15px; flex: none; color: var(--text-muted); }
+.mp-settings-keyinput {
+  flex: 1 1 auto;
+  min-width: 0;
+  height: 32px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--glass-2);
+  color: var(--text-primary);
+  font-size: 12.5px;
+}
+.mp-settings-keyinput:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+
+.mp-settings-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.mp-settings-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  height: 32px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--glass-2);
+  color: var(--text-primary);
+  font-size: 12.5px;
+  font-weight: 500;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s, opacity 0.15s;
+}
+.mp-settings-btn:hover:not(:disabled) { background: var(--mp-hover); }
+.mp-settings-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mp-settings-btn:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-settings-btn svg { width: 14px; height: 14px; }
+.mp-settings-btn.is-primary { border-color: transparent; background: var(--mp-primary); color: #fff; }
+.mp-settings-btn.is-primary:hover:not(:disabled) { filter: brightness(1.06); }
+.mp-settings-btn.is-ghost { border-color: transparent; background: transparent; color: var(--text-muted); }
+.mp-settings-btn.is-ghost:hover:not(:disabled) { background: var(--mp-hover); color: var(--text-primary); }
+/* 列表行内的危险操作按钮（「退出登录」）：平时就是红字（含图标），悬停浅红底仍是红字 */
+.mp-settings-btn.is-ghost.mp-list-danger { color: #dc2626; }
+.mp-settings-btn.is-ghost.mp-list-danger:hover:not(:disabled) {
+  background: rgba(220, 38, 38, 0.08);
+  color: #dc2626;
+}
+.dark .mp-settings-btn.is-ghost.mp-list-danger { color: #f87171; }
+.dark .mp-settings-btn.is-ghost.mp-list-danger:hover:not(:disabled) {
+  background: rgba(248, 113, 113, 0.12);
+  color: #f87171;
+}
+
+/* 移动端：弹层贴边全宽，操作条换行 */
+@media (max-width: 700px) {
+  .mp-settings-mask { padding: 12px; }
+  .mp-settings-card { max-height: calc(100vh - 24px); }
+  .mp-settings-head { padding: 16px 16px 10px; }
+  .mp-settings-banner { margin: 0 16px 4px; }
+  .mp-settings-body { padding: 4px 16px 8px; }
+  .mp-settings-foot { padding: 10px 16px 14px; }
+  .mp-settings-keyrow { flex-wrap: wrap; }
+  .mp-settings-keyinput { flex: 1 1 100%; }
+  .mp-settings-actions { flex-wrap: wrap; justify-content: stretch; }
+  .mp-settings-actions .mp-settings-btn { flex: 1 1 auto; }
+}
+
+/* ============================================================
+   专用设置页 /music/settings（与登录页 /music/settings/login）
+   设置页（.is-page）= 控制台式（区别于弹层卡片）：
+     · 控制台标题栏（图标 + 大标题 + 副标题）已上移到站点顶部导航
+       （components/SiteHeader.tsx），页面内不再重复渲染，也没有二级导航；
+     · 正文内部滚动，居中限宽，区块顺序排布，每块自带表/列表容器；
+     · 底部为常驻操作条：左状态胶囊 / 右操作组，主按钮「保存」突出。
+   弹层（音乐页齿轮）仍沿用卡片样式，不受本页规则影响。
+   ============================================================ */
+
+/* 页面容器：整列铺满 + 柔和顶部光晕 */
+.mp-settings-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 260px at 50% -60px,
+      color-mix(in srgb, var(--mp-primary) 8%, transparent),
+      transparent 70%),
+    var(--background);
+}
+
+/* 面板铺满且透明 */
+.mp-settings-card.is-page {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  animation: none;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 头部：控制台标题栏已上移到站点顶部导航（components/SiteHeader.tsx）
+   页面态不再渲染卡片内标题栏；弹层（音乐页齿轮）仍保留 .mp-settings-head ===== */
+.mp-settings-card.is-page .mp-settings-head { display: none; }
+.mp-settings-headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.mp-settings-headicon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--mp-primary) 14%, transparent);
+  color: var(--mp-primary);
+}
+
+/* ===== 横幅 ===== */
+.mp-settings-card.is-page .mp-settings-banner {
+  margin: 14px 28px 0;
+  border-radius: 10px;
+}
+
+/* ===== 正文：居中限宽，区块按序排布，每块内部自带表/列表容器 ===== */
+.mp-settings-card.is-page .mp-settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px 28px 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+.mp-settings-card.is-page .mp-settings-sec {
+  width: 100%;
+  max-width: 940px;
+  min-width: 0;
+}
+.mp-settings-card.is-page .mp-settings-sec + .mp-settings-sec {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.mp-settings-card.is-page .mp-settings-sectitle {
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+/* ===== A/B. 列表：页面态放宽行高、放大字号与控件 ===== */
+.mp-settings-card.is-page .mp-list { border-radius: 16px; }
+.mp-settings-card.is-page .mp-list-item { padding: 14px 20px; gap: 14px; }
+.mp-settings-card.is-page .mp-list-ic { width: 34px; height: 34px; border-radius: 10px; }
+.mp-settings-card.is-page .mp-list-ic svg { width: 17px; height: 17px; }
+.mp-settings-card.is-page .mp-list-title { font-size: 13.5px; }
+.mp-settings-card.is-page .mp-list-desc { font-size: 11.5px; }
+.mp-settings-card.is-page .mp-engine-name { font-size: 13.5px; }
+.mp-settings-card.is-page .mp-engine-slots { gap: 22px; }
+.mp-settings-card.is-page .mp-engine-slot { gap: 8px; }
+.mp-settings-card.is-page .mp-engine-slotic { width: 14px; height: 14px; }
+.mp-settings-card.is-page .mp-engine-headic { width: 34px; height: 34px; }
+/* 页面态列宽 = 14 锁图标位 + 8 gap + 42 开关 */
+.mp-settings-card.is-page .mp-engine-item .mp-engine-slot,
+.mp-settings-card.is-page .mp-engine-head .mp-engine-slot { width: 64px; }
+.mp-settings-card.is-page .mp-engine-head .mp-engine-slotlabel { width: 42px; }
+.mp-settings-card.is-page .mp-engine-head { padding-top: 11px; padding-bottom: 11px; }
+.mp-settings-card.is-page .mp-settings-sw { width: 42px; height: 24px; }
+.mp-settings-card.is-page .mp-settings-knob { width: 18px; height: 18px; }
+.mp-settings-card.is-page .mp-settings-sw.is-on .mp-settings-knob {
+  transform: translateX(18px);
+}
+.mp-settings-card.is-page .mp-settings-step,
+.mp-settings-card.is-page .mp-settings-num { height: 30px; }
+
+/* ===== C. 底部操作条：状态胶囊 + 操作组，主按钮突出 ===== */
+.mp-settings-card.is-page .mp-settings-foot {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 14px 28px 16px;
+  border-top: 1px solid var(--mp-divider);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+.mp-settings-card.is-page .mp-settings-status { min-height: 0; display: flex; align-items: center; }
+.mp-settings-card.is-page .mp-settings-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.mp-settings-card.is-page .mp-settings-auth {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--mp-divider);
+}
+.mp-settings-card.is-page .mp-settings-keyrow {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border: 1px dashed var(--mp-divider);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mp-soft) 40%, transparent);
+}
+.mp-settings-card.is-page .mp-settings-actions { justify-content: flex-end; gap: 10px; }
+.mp-settings-card.is-page .mp-settings-btn { height: 38px; padding: 0 14px; font-size: 13px; }
+.mp-settings-card.is-page .mp-settings-btn.is-primary {
+  height: 38px;
+  padding: 0 22px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--mp-primary) 28%, transparent);
+}
+
+@media (max-width: 700px) {
+  .mp-settings-card.is-page .mp-settings-banner { margin: 12px 16px 0; }
+  .mp-settings-card.is-page .mp-settings-body { padding: 18px 16px 26px; gap: 22px; }
+  .mp-settings-card.is-page .mp-settings-foot {
+    grid-template-columns: 1fr;
+    padding: 12px 16px 14px;
+  }
+  .mp-settings-card.is-page .mp-settings-actions { justify-content: stretch; }
+  .mp-settings-card.is-page .mp-settings-actions .mp-settings-btn { flex: 1 1 auto; }
+}
+
+/* 设置页加载 / 失败提示（整行提示条，不做浮动卡片） */
+.mp-settings-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--mp-divider);
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+.mp-settings-note.is-err { color: #b91c1c; }
+.dark .mp-settings-note.is-err { color: #f87171; }
+.mp-settings-note svg { width: 16px; height: 16px; flex: none; }
+.mp-settings-note .mp-settings-btn { margin-left: auto; }
+@media (max-width: 700px) {
+  .mp-settings-note { padding: 12px 16px; }
+}
+
+/* 登录页：居中窄卡片 */
+.mp-login-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+.mp-login-card {
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100%);
+  padding: 28px 26px 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  animation: mp-info-pop 0.2s cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+.mp-login-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.mp-login-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mp-primary) 14%, transparent);
+  color: var(--mp-primary);
+}
+.mp-login-badge svg { width: 22px; height: 22px; }
+.mp-login-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--text-primary); }
+.mp-login-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, #dc2626 35%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #b91c1c;
+}
+.dark .mp-login-error { color: #f87171; }
+.mp-login-error svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.mp-login-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.mp-login-label { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.mp-login-inputwrap { position: relative; display: flex; align-items: center; }
+.mp-login-inputicon {
+  position: absolute;
+  left: 11px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.mp-login-input {
+  width: 100%;
+  padding: 10px 12px 10px 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--mp-hover);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mp-login-input:focus {
+  outline: none;
+  border-color: var(--mp-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mp-primary) 22%, transparent);
+}
+.mp-login-input:disabled { opacity: 0.6; }
+.mp-login-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--mp-primary);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, opacity 0.15s;
+}
+.mp-login-submit:hover:not(:disabled) { filter: brightness(1.06); }
+.mp-login-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+.mp-login-submit:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 2px; }
+.mp-login-submit svg { width: 15px; height: 15px; }
+.mp-login-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.mp-login-back:hover { color: var(--text-primary); }
+.mp-login-back svg { width: 13px; height: 13px; }
+
+@media (max-width: 700px) {
+  .mp-settings-page { padding: 12px; }
+  .mp-login-wrap { padding: 16px; align-items: flex-start; }
+  .mp-settings-card.is-page { width: 100%; }
+}
+

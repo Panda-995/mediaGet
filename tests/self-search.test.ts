@@ -46,8 +46,8 @@ describe("self-search 统一入口", () => {
     ]);
     expect(SELF_SEARCH_SOURCE_LABELS.kugou).toBe("酷狗音乐");
     expect(SELF_SEARCH_SOURCE_LABELS.tencent).toBe("QQ音乐");
-    // 默认开关：tencent 搜索引擎停用 → 注册表在、启用集无
-    expect(isPlatformSearchEnabled("tencent")).toBe(false);
+    // 默认开关：两维全开 → 注册表与启用集均含 tencent
+    expect(isPlatformSearchEnabled("tencent")).toBe(true);
     expect(isPlatformSearchEnabled("netease")).toBe(true);
   });
 
@@ -58,16 +58,18 @@ describe("self-search 统一入口", () => {
     });
   });
 
-  it("tencent（默认开关关闭）→ SelfSearchError(source-unavailable)", async () => {
+  it("tencent（部署侧停用搜索引擎）→ SelfSearchError(source-unavailable)", async () => {
+    vi.stubEnv("MUSIC_PLATFORM_SEARCH_DISABLED", "tencent");
     await expect(selfSearch("tencent", "晴天", 1, 20)).rejects.toMatchObject({
       name: "SelfSearchError",
       code: "source-unavailable",
     });
   });
 
-  it("MUSIC_PLATFORM_SEARCH 放开 tencent 后其搜索引擎启用（env 可配）", () => {
-    vi.stubEnv("MUSIC_PLATFORM_SEARCH", '{"tencent":true}');
-    expect(isPlatformSearchEnabled("tencent")).toBe(true);
+  it("MUSIC_PLATFORM_SEARCH 可显式开 / 关 tencent 搜索引擎（env 可配）", () => {
+    expect(isPlatformSearchEnabled("tencent")).toBe(true); // 默认全开
+    vi.stubEnv("MUSIC_PLATFORM_SEARCH", '{"tencent":false}');
+    expect(isPlatformSearchEnabled("tencent")).toBe(false);
     vi.unstubAllGlobals();
   });
 

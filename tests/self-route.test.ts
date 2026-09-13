@@ -5,6 +5,8 @@ const mocked = vi.hoisted(() => ({
   selfSearch: vi.fn(),
   hasSelfSearchNextPage: vi.fn(),
   getKugouPlayUrl: vi.fn(),
+  /** loadEffectiveMusicFlags 的返回（用例可按需 mockResolvedValueOnce 覆盖总开关） */
+  effFlags: vi.fn(),
 }));
 
 vi.mock("@/lib/self-search", async (importOriginal) => {
@@ -18,18 +20,26 @@ vi.mock("@/lib/self-search", async (importOriginal) => {
 
 // mock effective flags so route handler's loadEffectiveMusicFlags 不触达真实存储
 vi.mock("@/lib/music-effective-flags", () => ({
-  loadEffectiveMusicFlags: vi.fn().mockResolvedValue({
-    baseline: { search: { netease: true, tencent: false, kugou: true, kuwo: true, migu: true, joox: true }, play: { netease: true, tencent: false, kugou: true, kuwo: true, migu: false, joox: true } },
-    flags: { search: { netease: true, tencent: false, kugou: true, kuwo: true, migu: true, joox: true }, play: { netease: true, tencent: false, kugou: true, kuwo: true, migu: false, joox: true } },
-    overrides: null,
-    behavior: { autoFallback: { enabled: true, maxAttempts: 4, crossSearch: true, showManualDialog: true } },
-    locked: { search: [], play: ["tencent"] },
-    editable: true,
-    blockedReason: null,
-  }),
+  loadEffectiveMusicFlags: mocked.effFlags,
   normalizeMusicSettingsDoc: vi.fn(),
   MUSIC_SETTINGS_KEY: "music.flags",
 }));
+
+/** 生效开关矩阵 fixture；builtinPlayEnabled=false 模拟「内置播放引擎总开关」被关闭 */
+function baseFlags(builtinPlayEnabled = true) {
+  const search = { netease: true, tencent: false, kugou: true, kuwo: true, migu: true, joox: true };
+  const play = { netease: true, tencent: false, kugou: true, kuwo: true, migu: false, joox: true };
+  return {
+    baseline: { search, play },
+    flags: { search, play },
+    overrides: null,
+    behavior: { autoFallback: { enabled: true, maxAttempts: 4, crossSearch: true, showManualDialog: true } },
+    builtinPlay: { enabled: builtinPlayEnabled, locked: !builtinPlayEnabled },
+    locked: { search: [], play: ["tencent"] },
+    editable: true,
+    blockedReason: null,
+  };
+}
 
 // 取直链走真实 normalizeKugouHash；只 stub 网络编排 getKugouPlayUrl
 vi.mock("@/lib/self-search/kugou", async (importOriginal) => {
@@ -65,6 +75,8 @@ async function callSelf(params = {}) {
 }
 
 beforeEach(() => {
+  mocked.effFlags.mockReset();
+  mocked.effFlags.mockResolvedValue(baseFlags());
   mocked.selfSearch.mockReset();
   mocked.selfSearch.mockResolvedValue({
     source: "kugou",
@@ -236,6 +248,34 @@ describe("GET /api/music/self · action=url（酷狗官方试听直链）", () =
     expect(res.status).toBe(502);
     const json = await res.json();
     expect(json.failType).toBe("sources-down");
+  });
+});
+
+describe("GET /api/music/self · 内置播放引擎总开关（MUSIC_BUILTIN_PLAY）", () => {
+  it("总开关关闭 → action=url 400 引导，且不触达 provider", async () => {
+    mocked.effFlags.mockResolvedValue(baseFlags(false));
+    const res = await callSelf({
+      action: "url",
+      source: "kugou",
+      hash: "E".repeat(32),
+    });
+    expect(res.status).toBe(400);
+    const json = await res.json();
+    expect(json.msg).toContain("内置播放引擎");
+    expect(json.msg).toContain("MUSIC_BUILTIN_PLAY");
+    expect(mocked.getKugouPlayUrl).not.toHaveBeenCalled();
+  });
+
+  it("总开关关闭不影响 action=search（搜索维度保留）", async () => {
+    mocked.effFlags.mockResolvedValue(baseFlags(false));
+    // 关键词取文件内唯一值：search 结果按 source+keyword 走进程内缓存
+    const res = await callSelf({
+      action: "search",
+      source: "kugou",
+      keyword: "总开关搜索保留",
+    });
+    expect(res.status).toBe(200);
+    expect(mocked.selfSearch).toHaveBeenCalled();
   });
 });
 

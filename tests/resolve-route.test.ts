@@ -7,8 +7,8 @@ import { GET } from "@/app/api/music/resolve/route";
  * 验证 400 / engine-missing / playable(full) / playable(fallback) 各分支的契约。
  *
  * 平台直链引擎矩阵（对齐 route.js 头注释 + music-platform-flags.js）：
- *   netease / tencent / kuwo —— 直链引擎代码已接入，但 tencent 播放引擎默认停用
- *   （部署侧需 MUSIC_PLATFORM_PLAY='{"tencent":true}' 才会 playable）；
+ *   netease / tencent / kuwo —— 直链引擎代码已接入，播放引擎默认全开 → playable
+ *   （若部署侧用 MUSIC_PLATFORM_PLAY_DISABLED=tencent 停用，则回 engine-missing）；
  *   kugou —— 内置官方 getSongInfo 元数据通道，默认播放引擎开启 → playable
  *   （直链由播放端经 /api/music/self?action=url 实时取）。
  */
@@ -158,8 +158,8 @@ describe("/api/music/resolve · 网易云（可解析到播放）", () => {
   });
 });
 
-describe("/api/music/resolve · QQ音乐（直链引擎已接入；播放引擎默认停用，需开关开启）", () => {
-  // tencent 播放引擎默认关：本组用例显式放开（模拟部署侧 MUSIC_PLATFORM_PLAY 配置后行为）
+describe("/api/music/resolve · QQ音乐（直链引擎已接入；播放引擎默认放开）", () => {
+  // tencent 播放引擎两维默认全开；此处显式声明，避免受测试进程 env 残留影响
   beforeEach(() => {
     vi.stubEnv("MUSIC_PLATFORM_PLAY", JSON.stringify({ tencent: true }));
   });
@@ -204,12 +204,13 @@ describe("/api/music/resolve · QQ音乐（直链引擎已接入；播放引擎�
 });
 
 describe("/api/music/resolve · 平台播放引擎开关（MUSIC_PLATFORM_PLAY）", () => {
-  // 未配置 / 清空开关 = 回退默认：tencent 播放引擎停用 → engine-missing（netease/kuwo 默认开启不受影响）
+  // 部署侧用黑名单停用 tencent 播放引擎（两维默认全开，见 music-platform-flags.js）
   beforeEach(() => {
     vi.stubEnv("MUSIC_PLATFORM_PLAY", "");
+    vi.stubEnv("MUSIC_PLATFORM_PLAY_DISABLED", "tencent");
   });
 
-  it("tencent 默认停用 → QQ songDetail 识别成功但 engine-missing，message 指引开关", async () => {
+  it("tencent 被部署停用 → QQ songDetail 识别成功但 engine-missing，message 指引开关", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => qqSongInfoResponse()));
     const res = await callResolve("https://y.qq.com/n/ryqq/songDetail/0039MnYb0p1iXz");
     expect(res.status).toBe(200);
@@ -226,6 +227,34 @@ describe("/api/music/resolve · 平台播放引擎开关（MUSIC_PLATFORM_PLAY�
     expect(res.status).toBe(200);
     const json = await res.json();
     expect(json.data.status).toBe("playable");
+  });
+});
+
+describe("/api/music/resolve · 内置播放引擎总开关（MUSIC_BUILTIN_PLAY）", () => {
+  // 部署侧用 env 终闸停用「内置播放引擎」（GD 公共上游 + 自研直连）
+  beforeEach(() => {
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+  });
+
+  it("netease 识别成功但内置播放引擎停用 → engine-missing，message 指引开关", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => neteaseDetailResponse()));
+    const res = await callResolve("https://music.163.com/song?id=186016");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.status).toBe("engine-missing");
+    expect(json.data.platform).toBe("netease");
+    expect(json.data.songId).toBe("186016");
+    expect(json.data.message).toContain("MUSIC_BUILTIN_PLAY");
+  });
+
+  it("总开关优先于平台级开关判定（tencent 平台开启也仍 engine-missing）", async () => {
+    vi.stubEnv("MUSIC_PLATFORM_PLAY", JSON.stringify({ tencent: true }));
+    vi.stubGlobal("fetch", vi.fn(async () => qqSongInfoResponse()));
+    const res = await callResolve("https://y.qq.com/n/ryqq/songDetail/0039MnYb0p1iXz");
+    expect(res.status).toBe(200);
+    const json = await res.json();
+    expect(json.data.status).toBe("engine-missing");
+    expect(json.data.message).toContain("内置播放引擎");
   });
 });
 

@@ -187,6 +187,9 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
           url={primaryVideoUrl}
           cover={posterUrl}
           alt={parsed?.title || "视频封面"}
+          title={parsed?.title}
+          author={parsed?.author}
+          platform="bilibili"
           accent="blue"
           inline
           parts={videoItems.length > 1 ? videoItems : undefined}

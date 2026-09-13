@@ -17,12 +17,25 @@ import {
   normalizeMusicSettingsDoc,
   MUSIC_SETTINGS_KEY,
 } from "@/lib/music-effective-flags";
-import { deleteSetting, writeSetting } from "@/lib/settings-store";
+import { deleteSetting, getStoreStatus, writeSetting } from "@/lib/settings-store";
+import { authenticateSettingsWrite } from "@/lib/music-settings-auth";
 
 export const runtime = "nodejs";
 
-/** 写入鉴权密钥 env 名 */
-const WRITE_KEY_ENV = "SETTINGS_API_KEY";
+/**
+ * 写入 / 删除失败时的 503 文案。
+ *
+ * 「没配置存储」与「配了但连不上」是两回事：原文案一律报「未配置持久化存储」，
+ * 会把「代理 / 防火墙把 turso.io 黑洞了」误导成「忘了配环境变量」。此端点已鉴权
+ * （仅管理员可达），故直接透出真实原因（如 Turso 请求超时（>8000ms））便于自诊断。
+ */
+function storeWriteFailureMessage(fallback) {
+  const status = getStoreStatus();
+  if (!status.available) return fallback;
+  return status.lastError
+    ? `持久化存储写入失败：${status.lastError}`
+    : "持久化存储写入失败，请稍后重试";
+}
 
 /**
  * 音乐平台能力矩阵接口：
@@ -38,8 +51,13 @@ const WRITE_KEY_ENV = "SETTINGS_API_KEY";
  *   - locked:      { search, play } 被终闸锁定的平台键数组
  *   - overrides:   文档对象 | null（无文档时为 null）
  *   - behavior:    { autoFallback } 行为配置
+ *   - builtinPlay: { enabled, locked } 内置播放引擎总开关（GD 公共上游 + 自研直连；关闭后
+ *                  不再取播放直链；locked = 被 env 终闸锁定）
  *   - editable:    boolean（store + key 都配了才可写）
  *   - blockedReason: string | null（不可写原因：no-store | no-key）
+ *   - storeAvailable: boolean（Turso 持久化存储**是否配置**，设置页「运行状态」展示）
+ *   - storeError:   string | null（存储最近一次故障原因，null = 正常；「配了但连不上」靠它区分）
+ *   - writeKeyConfigured: boolean（SETTINGS_API_KEY 是否已配置）
  */
 export async function GET(request) {
   const startTime = Date.now();
@@ -82,8 +100,12 @@ export async function GET(request) {
       locked: s.locked,
       overrides: s.overrides,
       behavior: s.behavior,
+      builtinPlay: s.builtinPlay,
       editable: s.editable,
       blockedReason: s.blockedReason,
+      storeAvailable: s.storeAvailable === true,
+      storeError: getStoreStatus().lastError,
+      writeKeyConfigured: s.writeKeyConfigured === true,
     },
   };
   console.log(
@@ -92,23 +114,6 @@ export async function GET(request) {
     }ms ip=${clientIP}`
   );
   return Response.json(body, { status: 200, headers: corsHeaders });
-}
-
-/**
- * 鉴权辅助：从 request 提取 Bearer token 并与 env 比较。
- * 返回 { ok, error }；ok=true 表示通过。
- */
-function authenticateWrite(request) {
-  const key = process.env[WRITE_KEY_ENV];
-  if (!key) {
-    return { ok: false, error: "设置写入未启用", status: 403 };
-  }
-  const auth = request.headers.get("authorization") || "";
-  const match = auth.match(/^Bearer\s+(.+)$/i);
-  if (!match || match[1].trim() !== key) {
-    return { ok: false, error: "未授权", status: 401 };
-  }
-  return { ok: true, error: null, status: null };
 }
 
 export async function PUT(request) {
@@ -124,7 +129,7 @@ export async function PUT(request) {
     });
   }
   // 2. 密钥鉴权
-  const auth = authenticateWrite(request);
+  const auth = authenticateSettingsWrite(request);
   if (!auth.ok) {
     return Response.json({ code: auth.status, msg: auth.error }, {
       status: auth.status, headers: corsHeaders,
@@ -159,9 +164,10 @@ export async function PUT(request) {
   const docStr = JSON.stringify(norm.doc);
   const ok = await writeSetting(MUSIC_SETTINGS_KEY, docStr);
   if (!ok) {
-    return Response.json({ code: 503, msg: "未配置持久化存储，无法保存" }, {
-      status: 503, headers: corsHeaders,
-    });
+    return Response.json(
+      { code: 503, msg: storeWriteFailureMessage("未配置持久化存储，无法保存") },
+      { status: 503, headers: corsHeaders }
+    );
   }
 
   // 6. 返回最新状态（与 GET 同构，省一次往返）
@@ -187,8 +193,12 @@ export async function PUT(request) {
       locked: s.locked,
       overrides: s.overrides,
       behavior: s.behavior,
+      builtinPlay: s.builtinPlay,
       editable: s.editable,
       blockedReason: s.blockedReason,
+      storeAvailable: s.storeAvailable === true,
+      storeError: getStoreStatus().lastError,
+      writeKeyConfigured: s.writeKeyConfigured === true,
     },
   }, { status: 200, headers: corsHeaders });
 }
@@ -204,7 +214,7 @@ export async function DELETE(request) {
       status: 200, headers: corsHeaders,
     });
   }
-  const auth = authenticateWrite(request);
+  const auth = authenticateSettingsWrite(request);
   if (!auth.ok) {
     return Response.json({ code: auth.status, msg: auth.error }, {
       status: auth.status, headers: corsHeaders,
@@ -219,9 +229,10 @@ export async function DELETE(request) {
 
   const ok = await deleteSetting(MUSIC_SETTINGS_KEY);
   if (!ok) {
-    return Response.json({ code: 503, msg: "未配置持久化存储，无法操作" }, {
-      status: 503, headers: corsHeaders,
-    });
+    return Response.json(
+      { code: 503, msg: storeWriteFailureMessage("未配置持久化存储，无法操作") },
+      { status: 503, headers: corsHeaders }
+    );
   }
 
   // 返回恢复后的状态（overrides=null, flags=baseline）
@@ -247,8 +258,12 @@ export async function DELETE(request) {
       locked: s.locked,
       overrides: null,
       behavior: s.behavior,
+      builtinPlay: s.builtinPlay,
       editable: s.editable,
       blockedReason: s.blockedReason,
+      storeAvailable: s.storeAvailable === true,
+      storeError: getStoreStatus().lastError,
+      writeKeyConfigured: s.writeKeyConfigured === true,
     },
   }, { status: 200, headers: corsHeaders });
 }

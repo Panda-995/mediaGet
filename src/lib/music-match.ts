@@ -35,6 +35,31 @@ export function musicKey(it: Pick<SearchItem, "source" | "id">): string {
   return `${it.source}:${it.id || ""}`;
 }
 
+/**
+ * 按单曲唯一键（`musicKey`）去重，保留首次出现的顺序与对象。
+ *
+ * 为什么需要：列表行以 `source-id` 作 React key，而「同一首歌被上游给了两遍」是真实会发生的
+ * ——kuwo / netease 是「自研主通道 + GD 兜底」双通道（兜底一旦触发就在本次会话内粘住），
+ * 两条通道共用同一套 id 空间、分页窗口却错位（实测同关键词 self 第 2 页与 GD 第 2 页 20 条里
+ * 重合 16 条），于是「前几页走自研、翻页中途转 GD」时，GD 会把自研已经给过的歌再给一遍。
+ * 累积列表若不清洗，轻则同一首渲染成两行，重则 key 撞车（React 报重复 key 并丢掉其中一行）。
+ *
+ * 同一平台内 id 唯一，故同 `musicKey` 必是同一条（含缺 id 的条目：这类条目缺少播放所需的 id，
+ * 本就不可用，一并收敛，不留重复行）。
+ */
+export function dedupeSearchItems(items: SearchItem[]): SearchItem[] {
+  const seen = new Set<string>();
+  const out: SearchItem[] = [];
+  for (const it of items) {
+    if (!it) continue;
+    const key = musicKey(it);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(it);
+  }
+  return out;
+}
+
 /** 把用户搜索词拆成清洗后的关键词 token（保留单个 CJK 字符，忽略纯符号）。 */
 export function splitSearchTokens(keyword: string): string[] {
   const seen = new Set<string>();
@@ -337,6 +362,19 @@ export function stripVersionSuffix(name: string): string {
 /** 同曲评分用的标题键：清洗（小写/去分隔）后的主标题。 */
 export function matchTitleKey(name: string): string {
   return cleanMusicText(stripVersionSuffix(name));
+}
+
+/**
+ * 歌曲身份 key（跨源共享缓存用）：归一化标题 + 排序去重后的歌手，**不含 source/id**。
+ *
+ * 用途：把「同一首歌在不同音源上的可播版本」聚合到同一条记录下（musicEngine.md §7.1 层①）。
+ * 正因为丢掉了音源信息，同名同歌手的跨源版本才能互为替代候选；标题复用同曲评分那套
+ * 清洗与版本词剥离（`matchTitleKey`），保证「晴天」与「晴天 (Live)」落到同一个 key。
+ */
+export function songIdentityKey(it: Pick<SearchItem, "name" | "artist">): string {
+  const title = matchTitleKey(it.name) || cleanMusicText(it.name);
+  const artists = artistNames(it.artist).sort().join(",");
+  return `${title}|${artists}`.slice(0, 200);
 }
 
 /** 跨源现搜的搜索词：保留主标题的空格与大小写（搜索友好），只去掉版本痕迹。 */

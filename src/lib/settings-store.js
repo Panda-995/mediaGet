@@ -6,6 +6,9 @@
  * - 惰性连接：未配置 TURSO_DB_URL / TURSO_AUTH_TOKEN 时全部静默跳过，
  *   调用方拿到失败信号后回落内置基线，绝不阻塞主流程；
  * - 容错：任何异常降级为失败返回值 + 告警日志，不向上抛；
+ * - 故障可诊断：记录最近一次失败原因（getStoreStatus），因为「env 配了」
+ *   不等于「连得上」——代理 / 防火墙把 turso.io 黑洞时读会静默回落基线，
+ *   写必须让管理员看到「是超时，不是没配置」；
  * - 进程内 TTL 缓存：读命中 15s（多副本最坏传播延迟），读失败 5s（防抖）；
  *   写 / 删后立即失效本地缓存。
  */
@@ -25,9 +28,36 @@ let tableReady = null;
 /** key -> { ok, value, updatedAt, at, ttl } */
 const cache = new Map();
 
+/** 最近一次存储故障（null = 尚未故障或已恢复） */
+let lastError = null;
+let lastErrorAt = 0;
+
 /** 存储是否配置可用（未配置则不触达 DB，调用方直接回落基线） */
 export function isStoreAvailable() {
   return Boolean(process.env.TURSO_DB_URL && process.env.TURSO_AUTH_TOKEN);
+}
+
+/**
+ * 存储诊断状态（只读）：
+ *   - available  ：env 是否配置（配置 ≠ 连得上）
+ *   - lastError  ：最近一次失败原因（成功一次即清空；null 表示正常）
+ *   - lastErrorAt：该失败发生时刻（ms）
+ * 供设置页「运行状态」展示与写入失败时的 503 文案使用。
+ */
+export function getStoreStatus() {
+  return { available: isStoreAvailable(), lastError, lastErrorAt };
+}
+
+/** 一次成功调用 → 清掉故障标记 */
+function markStoreOk() {
+  lastError = null;
+  lastErrorAt = 0;
+}
+
+/** 一次失败调用 → 记下原因（只留最近一条） */
+function markStoreFailure(e) {
+  lastError = (e && e.message) || String(e);
+  lastErrorAt = Date.now();
 }
 
 function getClient() {
@@ -97,9 +127,11 @@ export async function readSetting(key) {
         row && row.updated_at != null ? String(row.updated_at) : null,
     };
     cache.set(key, { ...out, at: Date.now(), ttl: READ_TTL_MS });
+    markStoreOk();
     return out;
   } catch (e) {
     logger.warn(`[settings] 读取失败 key=${key}: ${e.message}`);
+    markStoreFailure(e);
     const out = { ok: false, value: null, updatedAt: null };
     cache.set(key, { ...out, at: Date.now(), ttl: FAIL_TTL_MS });
     return out;
@@ -119,9 +151,11 @@ export async function writeSetting(key, value) {
       args: [key, String(value), new Date().toISOString()],
     });
     invalidateSettingCache(key);
+    markStoreOk();
     return true;
   } catch (e) {
     logger.warn(`[settings] 写入失败 key=${key}: ${e.message}`);
+    markStoreFailure(e);
     return false;
   }
 }
@@ -137,16 +171,20 @@ export async function deleteSetting(key) {
       args: [key],
     });
     invalidateSettingCache(key);
+    markStoreOk();
     return true;
   } catch (e) {
     logger.warn(`[settings] 删除失败 key=${key}: ${e.message}`);
+    markStoreFailure(e);
     return false;
   }
 }
 
-/** 测试用：重置连接 / 建表状态 / 缓存 */
+/** 测试用：重置连接 / 建表状态 / 缓存 / 故障标记 */
 export function resetSettingsStoreForTest() {
   db = null;
   tableReady = null;
   cache.clear();
+  lastError = null;
+  lastErrorAt = 0;
 }

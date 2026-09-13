@@ -6,11 +6,11 @@ import Footer from "./Footer";
 
 /**
  * 布局尾部（回到顶部 + 页脚）。
- * 沉浸式页面（如 /music 播放器）中隐藏，避免多出滚动空间。
+ * 沉浸式页面（如 /music 播放器及其设置/登录页）中隐藏，避免多出滚动空间。
  */
 export default function RootExtras() {
   const pathname = usePathname();
-  if (pathname === "/music") return null;
+  if (pathname === "/music" || pathname.startsWith("/music/settings")) return null;
   return (
     <>
       <BackToTop />

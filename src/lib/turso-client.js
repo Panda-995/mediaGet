@@ -12,6 +12,24 @@
  */
 
 /**
+ * 单次 HTTP 请求超时（ms）。
+ *
+ * 默认 8s：Turso 边缘在海外，跨境链路（尤其经代理）常见 1~3s 才建好 TLS，
+ * 原来写死 3s 会把「网络慢」误判成「存储不可用」——读静默回落基线、
+ * 写直接 503，而日志只有一句 The operation was aborted due to timeout。
+ * 可用 TURSO_HTTP_TIMEOUT_MS 覆盖（夹在 0.5s ~ 60s，防止误配成 0/inf）。
+ */
+const DEFAULT_HTTP_TIMEOUT_MS = 8000;
+const MIN_HTTP_TIMEOUT_MS = 500;
+const MAX_HTTP_TIMEOUT_MS = 60000;
+
+function resolveHttpTimeout() {
+  const raw = Number.parseInt(process.env.TURSO_HTTP_TIMEOUT_MS || "", 10);
+  if (!Number.isFinite(raw)) return DEFAULT_HTTP_TIMEOUT_MS;
+  return Math.min(Math.max(raw, MIN_HTTP_TIMEOUT_MS), MAX_HTTP_TIMEOUT_MS);
+}
+
+/**
  * 创建客户端。url 形如 libsql://xxx.turso.io，token 为 Turso 认证 JWT。
  * 返回 { execute }，execute 返回 { rows }（rows 为数组的数组），
  * 与 @libsql/client 的 execute 返回形状对齐（本模块只用 rows）。
@@ -28,17 +46,30 @@ export function createTursoClient({ url, authToken }) {
         typeof input === "string"
           ? { sql: input }
           : { sql: input.sql, args: (input.args || []).map(toValue) };
-      const res = await fetch(`${httpUrl}/v2/pipeline`, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${authToken}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          requests: [{ type: "execute", stmt }],
-        }),
-        signal: AbortSignal.timeout(3000),
-      });
+      const timeoutMs = resolveHttpTimeout();
+      let res;
+      try {
+        res = await fetch(`${httpUrl}/v2/pipeline`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${authToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requests: [{ type: "execute", stmt }],
+          }),
+          signal: AbortSignal.timeout(timeoutMs),
+        });
+      } catch (err) {
+        // AbortSignal.timeout 抛的是 TimeoutError（DOMException），原始 message 只有
+        // "The operation was aborted due to timeout"：看不出是谁超时、超了多久，
+        // 更看不出「配了但连不上」与「压根没配」的区别 —— 这里补成可读文案。
+        if (err && (err.name === "TimeoutError" || err.name === "AbortError")) {
+          throw new Error(`Turso 请求超时（>${timeoutMs}ms）`);
+        }
+        const cause = err && err.cause && err.cause.message ? `（${err.cause.message}）` : "";
+        throw new Error(`Turso 请求失败：${(err && err.message) || err}${cause}`);
+      }
       if (!res.ok) {
         const detail = (await res.text()).slice(0, 200);
         throw new Error(`Turso HTTP ${res.status}: ${detail}`);

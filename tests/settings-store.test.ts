@@ -24,6 +24,7 @@ vi.mock("@/lib/turso-client", () => ({
 import {
   SETTINGS_TABLE,
   deleteSetting,
+  getStoreStatus,
   isStoreAvailable,
   readSetting,
   resetSettingsStoreForTest,
@@ -138,5 +139,41 @@ describe("settings-store 读写", () => {
   it("删除失败返回 false", async () => {
     db.fail = true;
     expect(await deleteSetting("music.flags")).toBe(false);
+  });
+});
+
+describe("settings-store 故障透出（供设置页诊断「配了但连不上」）", () => {
+  it("初始无故障", () => {
+    const st = getStoreStatus();
+    expect(st.available).toBe(true);
+    expect(st.lastError).toBeNull();
+    expect(st.lastErrorAt).toBe(0);
+  });
+
+  it("写失败记下真实原因，成功一次即清空", async () => {
+    db.fail = true;
+    expect(await writeSetting("music.flags", "{}")).toBe(false);
+    const failed = getStoreStatus();
+    expect(failed.lastError).toContain("turso down");
+    expect(failed.lastErrorAt).toBeGreaterThan(0);
+
+    db.fail = false;
+    expect(await writeSetting("music.flags", "{}")).toBe(true);
+    expect(getStoreStatus().lastError).toBeNull();
+  });
+
+  it("读失败也记原因（读静默回落基线，但诊断要能看到）", async () => {
+    db.fail = true;
+    await readSetting("music.flags");
+    expect(getStoreStatus().lastError).toContain("turso down");
+  });
+
+  it("未配置 env 不算故障：available=false 且 lastError 保持 null", async () => {
+    vi.stubEnv("TURSO_DB_URL", "");
+    resetSettingsStoreForTest();
+    expect(await writeSetting("music.flags", "{}")).toBe(false);
+    const st = getStoreStatus();
+    expect(st.available).toBe(false);
+    expect(st.lastError).toBeNull();
   });
 });

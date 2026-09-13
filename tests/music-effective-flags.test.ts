@@ -16,6 +16,7 @@ import {
   MUSIC_SETTINGS_KEY,
   normalizeMusicSettingsDoc,
   resolveEffectiveMusicBehavior,
+  resolveEffectiveMusicBuiltinPlay,
   resolveEffectiveMusicPlatformFlags,
 } from "@/lib/music-effective-flags";
 import { readSetting } from "@/lib/settings-store";
@@ -104,6 +105,36 @@ describe("normalizeMusicSettingsDoc — strict 模式", () => {
     expect(r.ok).toBe(false);
     expect(r.error).toContain("版本");
   });
+
+  it("builtinPlay 非布尔 → 400", () => {
+    const doc = { ...validDoc(), builtinPlay: "off" };
+    const r = normalizeMusicSettingsDoc(doc, "strict");
+    expect(r.ok).toBe(false);
+    expect(r.error).toContain("builtinPlay");
+  });
+
+  it("builtinPlay 缺省 / null → 回部署基线（兼容未升级客户端，不报错）", () => {
+    const r = normalizeMusicSettingsDoc(validDoc(), "strict");
+    expect(r.ok).toBe(true);
+    expect(r.doc.builtinPlay).toBe(true); // 默认基线开启
+
+    const r2 = normalizeMusicSettingsDoc(
+      { ...validDoc(), builtinPlay: null },
+      "strict"
+    );
+    expect(r2.ok).toBe(true);
+    expect(r2.doc.builtinPlay).toBe(true); // null 视同「不写入」，回基线（默认开启）
+  });
+
+  it("MUSIC_BUILTIN_PLAY=off 时文档值被强制规范化为 null（终闸不可复活）", () => {
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+    const r = normalizeMusicSettingsDoc(
+      { ...validDoc(), builtinPlay: true },
+      "strict"
+    );
+    expect(r.ok).toBe(true);
+    expect(r.doc.builtinPlay).toBeNull();
+  });
 });
 
 describe("normalizeMusicSettingsDoc — lenient 模式", () => {
@@ -138,8 +169,8 @@ describe("normalizeMusicSettingsDoc — lenient 模式", () => {
 describe("resolveEffectiveMusicPlatformFlags", () => {
   it("无文档时等于 env 基线", () => {
     const flags = resolveEffectiveMusicPlatformFlags({ kind: "search", doc: null });
-    // 默认基线：tencent=false 其余=true
-    expect(flags.tencent).toBe(false);
+    // 默认基线：6 平台全开
+    expect(flags.tencent).toBe(true);
     expect(flags.netease).toBe(true);
   });
 
@@ -174,6 +205,35 @@ describe("resolveEffectiveMusicPlatformFlags", () => {
     };
     const flags = resolveEffectiveMusicPlatformFlags({ kind: "search", doc });
     expect(flags.kuwo).toBe(false); // 终闸强制关
+  });
+});
+
+describe("resolveEffectiveMusicBuiltinPlay", () => {
+  it("无文档 → 部署基线（默认开启）", () => {
+    expect(resolveEffectiveMusicBuiltinPlay({ doc: null })).toBe(true);
+    expect(resolveEffectiveMusicBuiltinPlay({ doc: {} })).toBe(true);
+  });
+
+  it("文档 false / true 直接生效", () => {
+    expect(resolveEffectiveMusicBuiltinPlay({ doc: { builtinPlay: false } })).toBe(
+      false
+    );
+    expect(resolveEffectiveMusicBuiltinPlay({ doc: { builtinPlay: true } })).toBe(
+      true
+    );
+  });
+
+  it("文档槽位为 null → 回退基线", () => {
+    expect(resolveEffectiveMusicBuiltinPlay({ doc: { builtinPlay: null } })).toBe(
+      true
+    );
+  });
+
+  it("env 终闸压过文档的 true", () => {
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+    expect(resolveEffectiveMusicBuiltinPlay({ doc: { builtinPlay: true } })).toBe(
+      false
+    );
   });
 });
 
@@ -226,7 +286,17 @@ describe("loadEffectiveMusicFlags", () => {
     const s = await loadEffectiveMusicFlags();
     expect(s.overrides).toBeTruthy();
     expect(s.flags.search.joox).toBe(false);
-    expect(s.behavior.enabled).toBe(false);
+    expect(s.behavior.autoFallback.enabled).toBe(false);
+  });
+
+  // wire 契约守卫：路由把 s.behavior 原样下发，前端 music-caps / 设置面板按嵌套
+  // { autoFallback } 消费。此处若退化成扁平，前端「自动换源」四项会静默失效。
+  it("behavior 恒为 { autoFallback } 嵌套形状（无文档 = 默认值）", async () => {
+    vi.stubEnv("SETTINGS_API_KEY", "test-key");
+    (readSetting as any).mockResolvedValue({ ok: true, value: null, updatedAt: null });
+    const s = await loadEffectiveMusicFlags();
+    expect(s.behavior).toEqual({ autoFallback: MUSIC_BEHAVIOR_DEFAULTS.autoFallback });
+    expect(s.behavior.autoFallback).not.toHaveProperty("autoFallback"); // 不是双层嵌套
   });
 
   it("被锁定平台在文档里被强制规范化为 null", async () => {
@@ -249,6 +319,31 @@ describe("loadEffectiveMusicFlags", () => {
     const s = await loadEffectiveMusicFlags();
     expect(s.editable).toBe(false);
     expect(s.blockedReason).toBe("no-key");
+  });
+
+  // wire 契约守卫：caps 路由把 s.builtinPlay 原样下发，前端 music-caps / 设置面板按
+  // { enabled, locked } 消费。此处若缺字段，控制台总开关会静默退回「永远开启」。
+  it("builtinPlay 恒为 { enabled, locked } 形状（无文档 = 基线开启）", async () => {
+    vi.stubEnv("SETTINGS_API_KEY", "test-key");
+    (readSetting as any).mockResolvedValue({ ok: true, value: null, updatedAt: null });
+    const s = await loadEffectiveMusicFlags();
+    expect(s.builtinPlay).toEqual({ enabled: true, locked: false });
+  });
+
+  it("MUSIC_BUILTIN_PLAY=off：enabled=false + locked=true，文档值强制规范化", async () => {
+    vi.stubEnv("SETTINGS_API_KEY", "test-key");
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+    const doc = JSON.stringify({
+      v: 1,
+      search: Object.fromEntries(MUSIC_FLAG_PLATFORM_KEYS.map((k) => [k, true])),
+      play: Object.fromEntries(MUSIC_FLAG_PLATFORM_KEYS.map((k) => [k, true])),
+      builtinPlay: true,
+      behavior: { autoFallback: MUSIC_BEHAVIOR_DEFAULTS.autoFallback },
+    });
+    (readSetting as any).mockResolvedValue({ ok: true, value: doc, updatedAt: "2026-09-13T00:00:00Z" });
+    const s = await loadEffectiveMusicFlags();
+    expect(s.builtinPlay).toEqual({ enabled: false, locked: true });
+    expect(s.overrides.builtinPlay).toBeNull(); // 强制规范化
   });
 });
 

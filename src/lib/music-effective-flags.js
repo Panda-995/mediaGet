@@ -8,13 +8,20 @@
  *     有文档时走文档全量矩阵；env 终闸永远压在最后。
  *
  * 被锁定槽位在文档里恒存 null（服务端强制规范化），面板不可编辑。
+ *
+ * 文档形状（v=1）：{ v, search, play, builtinPlay, behavior }
+ *   - search / play ：6 平台 × 开关矩阵（null = 部署锁定）
+ *   - builtinPlay   ：内置播放引擎总开关（见 §12 章）
+ *   - behavior      ：自动换源行为
  */
 import {
   MUSIC_BEHAVIOR_DEFAULTS,
   MUSIC_BEHAVIOR_LIMITS,
   MUSIC_FLAG_PLATFORM_KEYS,
   MUSIC_PLATFORM_DEFAULT_FLAGS,
+  isBuiltinPlayLocked,
   lockedPlatformKeys,
+  resolveBuiltinPlayBaseline,
   resolveMusicPlatformFlags,
 } from "@/lib/music-platform-flags";
 import { logger } from "@/lib/api-utils";
@@ -99,6 +106,24 @@ export function normalizeMusicSettingsDoc(raw, mode) {
     matrix[kind] = Object.keys(row).length > 0 ? row : { ...MUSIC_PLATFORM_DEFAULT_FLAGS[kind] };
   }
 
+  // builtinPlay（内置播放引擎总开关）校验：布尔值；null / 缺省 = 不写入（回基线）；
+  // env 终闸锁定（MUSIC_BUILTIN_PLAY=off）时一律规范化为 null，客户端无法复活。
+  let builtinPlay;
+  const rawBuiltinPlay = raw.builtinPlay;
+  if (rawBuiltinPlay === undefined || rawBuiltinPlay === null) {
+    builtinPlay = isBuiltinPlayLocked() ? null : resolveBuiltinPlayBaseline();
+  } else if (typeof rawBuiltinPlay === "boolean") {
+    builtinPlay = isBuiltinPlayLocked() ? null : rawBuiltinPlay;
+  } else if (mode === "strict") {
+    return {
+      ok: false,
+      doc: null,
+      error: "builtinPlay 必须为布尔值（null = 部署锁定 / 不写入）",
+    };
+  } else {
+    builtinPlay = isBuiltinPlayLocked() ? null : resolveBuiltinPlayBaseline();
+  }
+
   // behavior 校验
   let behavior;
   const rawBehavior = raw.behavior?.autoFallback;
@@ -179,7 +204,13 @@ export function normalizeMusicSettingsDoc(raw, mode) {
 
   return {
     ok: true,
-    doc: { v: DOC_VERSION, search: matrix.search, play: matrix.play, behavior: { autoFallback: behavior } },
+    doc: {
+      v: DOC_VERSION,
+      search: matrix.search,
+      play: matrix.play,
+      builtinPlay,
+      behavior: { autoFallback: behavior },
+    },
     error: "",
   };
 }
@@ -210,7 +241,14 @@ export function resolveEffectiveMusicPlatformFlags({ kind, doc }) {
   return table;
 }
 
-/** 解析行为配置（文档值 ?? 默认值，逐字段独立回落） */
+/**
+ * 解析行为配置（文档值 ?? 默认值，逐字段独立回落）。
+ *
+ * 返回**扁平**的四字段对象（`{ enabled, maxAttempts, crossSearch, showManualDialog }`）——
+ * 它与文档里 `behavior.autoFallback` 是同一个结构；对外下发时由
+ * `loadEffectiveMusicFlags()` 统一包一层 `{ autoFallback }`（见 §5.2 wire 契约），
+ * 前端 `music-caps.ts` / 设置面板均按嵌套形状消费，勿在此处或路由里改成扁平。
+ */
 export function resolveEffectiveMusicBehavior(doc) {
   const raw = doc?.behavior?.autoFallback;
   if (!raw) return { ...MUSIC_BEHAVIOR_DEFAULTS.autoFallback };
@@ -236,6 +274,20 @@ export function resolveEffectiveMusicBehavior(doc) {
   };
 }
 
+/**
+ * 解析「内置播放引擎」总开关的生效值（纯函数，无副作用）。
+ *
+ * 优先级：env 终闸（MUSIC_BUILTIN_PLAY=off 恒 false）→ 文档值（true/false）→ 部署基线。
+ * 语义：关闭后站点不再经 GD 公共上游 / 自研直连取播放直链；
+ * 搜索（search 维度）与歌词 / 封面等数据通道不受本开关影响。
+ */
+export function resolveEffectiveMusicBuiltinPlay({ doc }) {
+  if (isBuiltinPlayLocked()) return false;
+  const v = doc?.builtinPlay;
+  if (v === true || v === false) return v;
+  return resolveBuiltinPlayBaseline();
+}
+
 // ---------------------------------------------------------------------------
 // async 入口（读存储 + 求值 + 装配）
 // ---------------------------------------------------------------------------
@@ -248,9 +300,12 @@ export function resolveEffectiveMusicBehavior(doc) {
  *   flags:        { search, play }  生效矩阵（含文档覆写）
  *   overrides:    doc | null       原始文档（null 表示从未保存）
  *   behavior:     { autoFallback }  行为配置
+ *   builtinPlay:  { enabled, locked } 内置播放引擎总开关（生效值 / 是否被 env 终闸锁定）
  *   locked:       { search, play }  各维度被 env 终闸锁定的平台键数组
  *   editable:     boolean          是否允许写入（store + key 都配了）
  *   blockedReason: string | null   不可编辑原因（优先 no-store）
+ *   storeAvailable: boolean        持久化存储（Turso）是否可用（设置页「运行状态」展示）
+ *   writeKeyConfigured: boolean    写入密钥 SETTINGS_API_KEY 是否配置
  * }
  */
 export async function loadEffectiveMusicFlags() {
@@ -290,6 +345,7 @@ export async function loadEffectiveMusicFlags() {
     search: lockedPlatformKeys("search"),
     play: lockedPlatformKeys("play"),
   };
+  const builtinPlayLocked = isBuiltinPlayLocked();
 
   // 强制规范化：被锁定的槽位写 null（不信任客户端，也不给 UI bug 留陷阱）
   if (doc) {
@@ -299,6 +355,10 @@ export async function loadEffectiveMusicFlags() {
           doc[kind][key] = null;
         }
       }
+    }
+    // 内置播放引擎总开关被 env 终闸锁定时同样写 null（面板不可开启）
+    if (builtinPlayLocked && doc.builtinPlay !== null) {
+      doc.builtinPlay = null;
     }
   }
 
@@ -311,15 +371,24 @@ export async function loadEffectiveMusicFlags() {
     search: resolveEffectiveMusicPlatformFlags({ kind: "search", doc }),
     play: resolveEffectiveMusicPlatformFlags({ kind: "play", doc }),
   };
-  const behavior = resolveEffectiveMusicBehavior(doc);
+  // wire 契约（API.md §12.7 / spec §5.2）：behavior 与文档同构，恒为 { autoFallback }
+  const behavior = { autoFallback: resolveEffectiveMusicBehavior(doc) };
+  // 内置播放引擎总开关（第四维，独立于平台矩阵）
+  const builtinPlay = {
+    enabled: resolveEffectiveMusicBuiltinPlay({ doc }),
+    locked: builtinPlayLocked,
+  };
 
   return {
     baseline,
     flags,
     overrides: doc,
     behavior,
+    builtinPlay,
     locked,
     editable,
     blockedReason,
+    storeAvailable: storeOk,
+    writeKeyConfigured,
   };
 }

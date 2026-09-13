@@ -61,6 +61,32 @@ export function clearPlaylistSnapshot(): void {
   }
 }
 
+/** 恢复所需的搜索渠道偏好最小形状（结构类型，避免本模块耦合到 MusicExplorer 内部类型） */
+export interface SnapshotRestoreChannelPref {
+  /** 是否聚合搜索：聚合列表来源混合、刻意不落快照，故聚合态永不匹配 */
+  agg: boolean;
+  /** 当前渠道 key（单平台），与快照 source 逐字比较 */
+  source: string;
+}
+
+/**
+ * 挂载恢复决策：这份快照是否属于「上次那次搜索会话」而可回填——要求渠道偏好为单平台、
+ * 且与该快照来源一致（无快照 / 空列表一律不可恢复）。
+ *
+ * **只决定「数据是否回填」，不决定「刷新后停在哪个视图」**：视图落点一律由
+ * music-view-store 的 `mp-music-view` 决定（挂载时 restoreMusicView）。快照恢复不得
+ * 改写视图——否则用户显式切到「发现歌曲」后刷新会被拖回播放列表，而 `setMusicView`
+ * 还会顺手把偏好改写成 playlist，形成「再也回不去」。
+ */
+export function canRestorePlaylistSnapshot(
+  pref: SnapshotRestoreChannelPref | null,
+  snap: PlaylistSnapshot | null
+): snap is PlaylistSnapshot {
+  return (
+    !!snap && snap.list.length > 0 && !!pref && !pref.agg && pref.source === snap.source
+  );
+}
+
 /** 本次搜索首页返回 fresh 是否与缓存列表头部逐条一致（source+id 对齐即可，忽略元数据噪声） */
 export function isSameListHead(fresh: SearchItem[], cached: SearchItem[]): boolean {
   if (!fresh.length || fresh.length > cached.length) return false;

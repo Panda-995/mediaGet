@@ -10,12 +10,11 @@
  * 搜索（self-search，tencent 模块仍在注册表内）；kugou 已内置官方试听直链（getSongInfo，
  * 免费档 128k mp3，见 src/lib/self-search/kugou.js），migu 仍无内置直链引擎。
  *
- * 默认值（2026-09，与「腾讯暂时不可用」事实一致，但均可用 env 覆盖）：
- *   - search：除 tencent 外全开（QQ 可播直链暂无稳定来源，先不给搜索入口）；
- *   - play:  开放实测可用的 netease / kuwo / kugou / joox——kugou 为官方免费 128k
- *             试听直链（VIP/付费曲取链会失败，见 failType=vip-only）；tencent（GD 上游
- *             不开放）与 migu（无内置直链）默认关——migu 的播放可由已配置的 lx 音源脚本
- *             兜底（urlFallbacks，见 lx-provider.js，不受本开关约束）。
+ * 默认值（2026-09 起：search / play 两维 6 平台全开——开关交由部署 env 与设置面板收敛）：
+ *   - search / play 均默认 true；tencent 与 migu 虽默认放开，取链仍可能失败：
+ *     tencent 的 GD 取链上游不开放（实测 400），migu 无内置直链引擎——需要时用
+ *     env 黑名单单独停用（MUSIC_PLATFORM_PLAY_DISABLED=tencent,migu）；
+ *   - kugou 为官方免费 128k 试听直链（VIP/付费曲取链会失败，见 failType=vip-only）。
  *
  * 配置方式（环境变量）：
  *   1) 正向覆盖（JSON 对象，仅列出需要覆盖的平台即可；或 "all" 全开）：
@@ -32,6 +31,16 @@
  *      等价于把列出的平台同时写进 search / play 两个禁用黑名单（两个维度一并强制关闭），
  *      供「整体下线某平台」时只配一个变量；只需单独停某一维度时仍用 2) 的两个黑名单。
  *
+ * 内置播放引擎总开关（第四维，独立于平台矩阵）：
+ *   - 内置播放引擎 = 站点自带的取直链通道（GD 公共上游 /api/music + 自研直连
+ *     /api/music/self），这是「零配置即可播放」的那部分能力；
+ *   - 关闭后：站点不再经上述内置通道取播放直链；**搜索不受影响**
+ *     （search 维度与 /api/music/self?action=search、歌词/封面等数据通道照常）；
+ *   - env：MUSIC_BUILTIN_PLAY=off 为**运维终闸**（面板不可再开启），on / 空 / default
+ *     为基线（默认开启，面板可自由开关）；配置文档字段 builtinPlay（null = 被终闸锁定）；
+ *   - 消费方：/api/music、/api/music/self 的 action=url 拦截，resolve（playable 判定），
+ *     caps 下发 { enabled, locked }，前端 music-caps / music-client 据此收敛候选与取链。
+ *
  * 消费方：/api/music（search/url 校验）、/api/music/self（自研搜索校验与列表）、
  * resolve/route.js（playable 判定）、/api/music/caps（能力矩阵下发，前端据此过滤 chips
  * 与跨源现搜候选）。前端侧 music-caps.ts 通过 caps 端点拉取部署期真实开关，失败时回退本文件默认。
@@ -47,11 +56,11 @@ export const MUSIC_FLAG_PLATFORM_KEYS = [
   "joox",
 ];
 
-/** 各平台默认开关（与上表顺序对应） */
+/** 各平台默认开关（与上表顺序对应；2026-09 起两维默认全开） */
 export const MUSIC_PLATFORM_DEFAULT_FLAGS = {
   search: {
     netease: true,
-    tencent: false, // QQ 可播直链暂无稳定来源 → 默认不给搜索入口
+    tencent: true, // 默认放开；需要收敛时用 MUSIC_PLATFORM_SEARCH_DISABLED / 面板停用
     kugou: true,
     kuwo: true,
     migu: true,
@@ -59,10 +68,10 @@ export const MUSIC_PLATFORM_DEFAULT_FLAGS = {
   },
   play: {
     netease: true,
-    tencent: false, // GD 上游不开放 tencent 取链（2026-09 实测 400）
+    tencent: true, // GD 取链上游不开放（实测 400），取链会失败，但开关默认放开
     kugou: true, // 内置酷狗官方试听直链（getSongInfo，免费档 128k mp3）
     kuwo: true,
-    migu: false, // 无内置直链引擎；lx 脚本兜底不依赖本开关
+    migu: true, // 无内置直链引擎；取链会失败
     joox: true,
   },
 };
@@ -122,7 +131,7 @@ function readEnv(name) {
  */
 function parseOverride(kind, raw) {
   if (!raw || raw === "default") return null;
-  // "all" = 该维度全部平台开启（区别于默认矩阵里 tencent/kugou/migu 的关闭值）
+  // "all" = 该维度全部平台开启（默认矩阵已全开，本写法用于显式压过自定义默认）
   if (raw === "all") {
     return Object.fromEntries(
       MUSIC_FLAG_PLATFORM_KEYS.map((key) => [key, true])
@@ -234,4 +243,52 @@ export function isPlatformPlayEnabled(source, table) {
 export function enabledPlatformList(kind, table) {
   const t = table || resolveMusicPlatformFlags(kind);
   return MUSIC_FLAG_PLATFORM_KEYS.filter((key) => t[key] === true);
+}
+
+// ---------------------------------------------------------------------------
+// 内置播放引擎总开关（站点自带取直链通道：GD 公共上游 + 自研直连）
+// ---------------------------------------------------------------------------
+
+/** 内置播放引擎总开关的默认值（零配置即可播放的那部分能力，默认开启） */
+export const MUSIC_BUILTIN_PLAY_DEFAULT = true;
+
+/** 总开关 env 名（`off` = 运维终闸，面板不可再开启；`on` / 空 = 基线） */
+export const MUSIC_BUILTIN_PLAY_ENV = "MUSIC_BUILTIN_PLAY";
+
+const BUILTIN_PLAY_ON_VALUES = new Set(["on", "true", "1", "yes", "enabled"]);
+const BUILTIN_PLAY_OFF_VALUES = new Set(["off", "false", "0", "no", "disabled"]);
+
+/**
+ * 解析 MUSIC_BUILTIN_PLAY：
+ *   - 空 / "default" → null（不覆盖，回退默认开启）；
+ *   - off/false/0/disabled → false（终闸：强制关闭且面板不可开启）；
+ *   - on/true/1/enabled → true（基线开启，面板仍可关闭）；
+ *   - 其它非法值 → null 并告警（回退默认）。
+ */
+function parseBuiltinPlayEnv(raw) {
+  const v = String(raw || "").trim().toLowerCase();
+  if (!v || v === "default") return null;
+  if (BUILTIN_PLAY_OFF_VALUES.has(v)) return false;
+  if (BUILTIN_PLAY_ON_VALUES.has(v)) return true;
+  console.warn(
+    `[music-flags] ${MUSIC_BUILTIN_PLAY_ENV} 非法取值已忽略：${raw}（可用 on / off）`
+  );
+  return null;
+}
+
+/** 内置播放引擎的部署基线（env 未配置时 = 默认开启） */
+export function resolveBuiltinPlayBaseline() {
+  const v = parseBuiltinPlayEnv(readEnv(MUSIC_BUILTIN_PLAY_ENV));
+  return v === null ? MUSIC_BUILTIN_PLAY_DEFAULT : v;
+}
+
+/** 内置播放引擎是否被 env 终闸锁定（MUSIC_BUILTIN_PLAY=off：配置文档无法复活） */
+export function isBuiltinPlayLocked() {
+  return parseBuiltinPlayEnv(readEnv(MUSIC_BUILTIN_PLAY_ENV)) === false;
+}
+
+/** 内置播放引擎是否开启（可选传入已求值的生效值，便于路由复用同一次求值） */
+export function isBuiltinPlayEnabled(effective) {
+  if (typeof effective === "boolean") return effective;
+  return resolveBuiltinPlayBaseline();
 }

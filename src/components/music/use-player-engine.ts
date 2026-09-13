@@ -28,8 +28,6 @@ import {
 import { BR_DEFAULT, BR_LABEL } from "@/components/music/types";
 import {
   crossSearchPlayableSourceKeys,
-  fetchLxCatalog,
-  hasLxUrlFallbackFor,
   requestPlayDirect,
   searchAcrossSources,
   SELF_ONLY_ENGINE_KEYS,
@@ -42,6 +40,16 @@ import {
   musicKey,
   rankSongMatchCandidates,
 } from "@/lib/music-match";
+import { getMusicBehavior } from "@/lib/music-caps";
+import {
+  readCachedCandidates,
+  readDegradeNegative,
+  reportDegradeNegative,
+  reportPlaybackCandidate,
+  reportSourceHealth,
+  reportTrackFailure,
+} from "@/lib/music-remote-cache";
+import { readPlayerPrefs, writePlayerPrefs } from "./player-prefs";
 /** 播放引擎的“队列与通道上下文”。list/source 变化时 hook 随之刷新，无需重新创建引擎 */
 export interface UsePlayerEngineOptions {
   /** 当前播放队列（搜索结果 / 解析单曲列表）；null = 队列已清空 */
@@ -73,8 +81,13 @@ export interface AudioElementProps {
 /** 播放失败发生的阶段：resolve = 取直链失败；play = 直链已就绪但 <audio> 媒体层报错（防盗链/解码/失效） */
 export type PlayFailStage = "resolve" | "play" | null;
 
-/** 换源候选来源：list = 当前播放队列内的近似条目（零额外请求成本）；multi-search = 跨源现搜兜底 */
-export type AltProvenance = "list" | "multi-search";
+/**
+ * 换源候选来源：
+ * - list         = 当前播放队列内的近似条目（零额外请求成本）；
+ * - cache        = 共享缓存里「历史真实播放成功过」的同曲版本（来源 C，一次读即得）；
+ * - multi-search = 跨源现搜兜底（来源 B，成本最高，排在最后）。
+ */
+export type AltProvenance = "list" | "cache" | "multi-search";
 
 /** 播放失败后的“同歌其他版本”候选 */
 export interface AltCandidate {
@@ -93,16 +106,13 @@ export interface AltCandidate {
 }
 
 /**
- * 单次点歌单轮允许的自动换源尝试上限（直链请求总量，来源 A 队列候选 + 来源 B
- * 跨源现搜候选各尝试一次都计入，防失控；对齐 musicEngine.md：单轮 ≤4 次直链请求）。
+ * 自动换源行为配置的读取时机：在 runAutoFallback 入口与各调用点各读一次，同轮内不重复读，
+ * 避免一轮尝试中因配置刷新产生漂移。该值不参与 React 渲染，零重渲染代价。
+ * 配置源：部署级设置面板（music-caps.getMusicBehavior）→ 默认值见 MUSIC_BEHAVIOR_DEFAULTS。
  */
-const MAX_AUTO_ALT_ATTEMPTS = 4;
 
-/** 队列内候选（A）与跨源现搜候选（B）合并：按 (source,id) 去重、自动优先、高分优先 */
-function mergeAltCandidates(
-  queue: AltCandidate[],
-  cross: AltCandidate[]
-): AltCandidate[] {
+/** 三路候选（队列内 A / 共享缓存 C / 跨源现搜 B）合并：按 (source,id) 去重、自动优先、高分优先 */
+function mergeAltCandidates(...groups: AltCandidate[][]): AltCandidate[] {
   const map = new Map<string, AltCandidate>();
   const put = (c: AltCandidate) => {
     const k = musicKey(c.item);
@@ -115,8 +125,7 @@ function mergeAltCandidates(
       map.set(k, c);
     }
   };
-  queue.forEach(put);
-  cross.forEach(put);
+  groups.forEach((group) => group.forEach(put));
   const out = Array.from(map.values());
   out.sort((a, b) => {
     if (a.auto !== b.auto) return Number(b.auto) - Number(a.auto);
@@ -158,6 +167,42 @@ function pickQueueAlternatives(
   return out;
 }
 
+/**
+ * 从共享缓存里挑「历史真实播放成功过」的同曲版本（来源 C，层①）。
+ *
+ * 与来源 A（队列内）的关系：A 依赖「用户这次搜到的列表里恰好有其它源的同曲条目」，
+ * C 则是累积事实——某个版本只要被任何人真实播放成功过一次，7 天内就能被复用。
+ * 因为只有真实出声才写，命中即高置信，按 auto 处理（可直接自动续播）。
+ *
+ * 元数据（歌名/歌手/封面）沿用失败曲目：缓存只存 source/id/album，同名同歌手是既定前提；
+ * id 同时兜底给 urlId，理由见 music-client.requestPlayDirect 的取值顺序。
+ */
+async function pickCachedAlternatives(item: SearchItem): Promise<AltCandidate[]> {
+  const rows = await readCachedCandidates(item);
+  if (!rows.length) return [];
+  // 与来源 B 同一口径：候选源必须「当前既可搜又可播」（平台/内置引擎开关可能已被收敛），
+  // 否则会把已停用的源塞进候选——必然失败，还会白写一条黑名单
+  const allowed = new Set(crossSearchPlayableSourceKeys(item.source || ""));
+  const selfKey = musicKey(item);
+  const out: AltCandidate[] = [];
+  for (const row of rows) {
+    if (!allowed.has(row.source)) continue;
+    if (musicKey({ source: row.source, id: row.id }) === selfKey) continue;
+    out.push({
+      item: {
+        ...item,
+        source: row.source,
+        id: row.id,
+        urlId: row.id,
+        album: row.album || item.album,
+      },
+      auto: true,
+      provenance: "cache",
+    });
+  }
+  return out;
+}
+
 /** 判断 <audio> 当前播放源与已生效直链是否为同一资源（宽容比较：忽略 hash 与结尾斜杠差异） */
 function isSameMediaSrc(current: string, directUrl: string): boolean {
   if (!current || !directUrl) return false;
@@ -186,20 +231,28 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
    *  而客户端水合首次渲染会读到缓存（如 0.35）→ 两端首帧不一致触发 hydration mismatch
    *  （react.dev/link/hydration-mismatch）。改为 effect 在挂载后恢复，水合首帧恒为 50%。 */
   const [volume, setVolume] = useState(0.5);
-  /** 挂载后从本地缓存恢复上次音量（无缓存 / 隐私模式等不可用时保持默认 50%） */
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem("mp-player-volume");
-      if (raw !== null) {
-        const n = Number(raw);
-        if (Number.isFinite(n) && n > 0 && n <= 1) setVolume(n);
-      }
-    } catch {
-      // localStorage 不可用（隐私模式等）时忽略，保持默认
-    }
-  }, []);
   const [muted, setMuted] = useState(false);
   const [loop, setLoop] = useState(false);
+  /** 挂载后一次性恢复本机播放偏好（音量 / 音质档 / 单曲循环 / 静音），见 player-prefs.ts */
+  useEffect(() => {
+    const p = readPlayerPrefs();
+    setVolume(p.volume);
+    setBr(p.br);
+    setLoop(p.loop);
+    setMuted(p.muted);
+  }, []);
+  /**
+   * 播放偏好落盘：跳过首次运行——那一刻 state 还是默认值，写入会把刚恢复的缓存盖掉；
+   * 从第二次运行（恢复引发的渲染或用户改动）起写。
+   */
+  const prefPersistReadyRef = useRef(false);
+  useEffect(() => {
+    if (!prefPersistReadyRef.current) {
+      prefPersistReadyRef.current = true;
+      return;
+    }
+    writePlayerPrefs({ volume, br, loop, muted });
+  }, [volume, br, loop, muted]);
   /** 拖动进度条期间暂停 timeupdate 同步（避免拖拽被回跳打断） */
   const [seeking, setSeeking] = useState(false);
 
@@ -304,6 +357,8 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
         try {
           const cap = Number.isFinite(audio.duration) ? audio.duration : Infinity;
           audio.currentTime = Math.min(resumeAt, cap);
+          // 暂停态下 timeupdate 未必触发：主动同步进度条，避免恢复会话后停在 0:00
+          setCurrentTime(audio.currentTime);
         } catch {
           /* 个别源暂不可 seek，忽略 */
         }
@@ -344,15 +399,6 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     audio.loop = loop;
   }, [volume, muted, loop]);
 
-  // 音量本地缓存：用户每次调整后写入，刷新 / 下次进入时恢复上次的音量
-  useEffect(() => {
-    try {
-      localStorage.setItem("mp-player-volume", String(volume));
-    } catch {
-      // 隐私模式等写入失败时静默降级，不影响播放
-    }
-  }, [volume]);
-
   /**
    * 在当前用户手势内“静音试播”一次以解锁浏览器自动播放策略，
    * 这样直链异步就绪后的 play() 不会被拦截。静音会保持到正式播放前按用户设置恢复。
@@ -375,17 +421,12 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
    * 跨源现搜兜底（候选来源 B）：当前队列内已无可自动接续的版本时，拿失败原曲
    * 去「可搜又可播」的其它搜索源现搜第一页，再按同曲评分收敛出高置信候选
    * （自动 ≥75 分 + 专辑一致；60-74 或专辑冲突降为人工候选）。一次失败至多跑一轮。
-   * 任一环节异常（目录不可用 / 搜索失败 / 全部取消）都静默回退为空，不阻塞闭环。
+   * 任一环节异常（搜索失败 / 全部取消）都静默回退为空，不阻塞闭环。
    */
   const suggestCrossCandidates = async (
     target: SearchItem,
     token: number
   ): Promise<AltCandidate[]> => {
-    try {
-      await fetchLxCatalog(); // 尽力预热 lx 目录；失败则只用内置源
-    } catch {
-      /* 目录不可用时按“无扩展源”处理 */
-    }
     if (altTokenRef.current !== token) return [];
     const keys = crossSearchPlayableSourceKeys(target.source || "");
     if (!keys.length) return [];
@@ -427,6 +468,8 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     altTokenRef.current = token;
     altInFlightRef.current = false;
     crossAbortRef.current?.abort(); // 新点歌：中止任何在途的跨源现搜
+    // 用户主动点歌一律从头播：清掉「恢复会话 / 音质热切换」遗留的续播位置
+    resumeAtRef.current = 0;
     // 切换音质时间戳不跨歌复用：新歌的媒体错误应视为歌曲级失败
     qualitySwitchAtRef.current = 0;
     // 原曲本身记入已尝试，自动换源兜底不会再绕回当前已失败版本
@@ -440,16 +483,12 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     setAltNote("");
     const started = await attemptPlay(item, index);
     if (started) return;
-    // 仅 migu（SELF_ONLY_ENGINE_KEYS，无内置直链引擎）的直链失败是确定性的：除非已配置对应
-    // lx 音源兜底（hasLxUrlFallbackFor），否则队列内同歌候选必然同为该源，自动换源只会空转
-    // 徒劳，直接展示引擎提示。kugou 已内置官方试听直链，失败属业务性（VIP/下架/网络），
-    // 应正常进入下方跨源自动换源闭环（同曲其它可播音源兜底）。
-    if (
-      SELF_ONLY_ENGINE_KEYS.has(item.source || source) &&
-      !hasLxUrlFallbackFor(item.source || source)
-    )
-      return;
-    // 主曲直链获取失败 → 同轮内推进自动换源闭环
+    // 仅 migu（SELF_ONLY_ENGINE_KEYS，无内置直链引擎）的直链失败是确定性的：队列内同歌
+    // 候选必然同为该源，自动换源只会空转徒劳，直接展示引擎提示。kugou 已内置官方试听
+    // 直链，失败属业务性（VIP/下架/网络），应正常进入下方跨源自动换源闭环（同曲其它可播音源兜底）。
+    if (SELF_ONLY_ENGINE_KEYS.has(item.source || source)) return;
+    // 主曲直链获取失败 → 同轮内推进自动换源闭环（总开关关闭时保留既有错误文案）
+    if (!getMusicBehavior().enabled) return;
     setAutoTrying(true);
     try {
       await runAutoFallback(item, token);
@@ -461,28 +500,51 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   /**
    * 自动换源闭环（来源 A 队列内候选 → 无自动可用后再跑一轮来源 B 跨源现搜）。
    * 逐个尝试高置信候选（A 优先，B 随后），成功即停；有界（单轮直链请求 ≤
-   * MAX_AUTO_ALT_ATTEMPTS + 已尝试去重 + 现搜一轮封顶）；token 失效（用户手动
+   * behavior.maxAttempts + 已尝试去重 + 现搜一轮封顶）；token 失效（用户手动
    * 切歌/重置）即中止。收尾仍有未尝试候选时经 alternatives 暴露给人工选版面板。
+   *
+   * 行为配置（设置面板下发）在入口读一次：总开关 / 尝试上限 / 跨源现搜 / 人工选版面板。
    */
   const runAutoFallback = async (
     failedItem: SearchItem,
     token: number
   ): Promise<void> => {
+    const behavior = getMusicBehavior(); // 同轮只读一次，避免配置漂移
+    if (!behavior.enabled) return; // 总开关关闭：不做任何换源尝试
     if (altInFlightRef.current) return;
     altInFlightRef.current = true;
     let crossTried = false;
     let crossCands: AltCandidate[] = [];
     try {
+      // 来源 C：共享缓存里「历史真实播放成功过」的同曲版本（层①）。一次读即得，
+      // 命中就省掉整轮跨源现搜；读失败 / 未配置按无缓存继续，不影响既有闭环
+      // 层③（降级负缓存）与之并行读：这首歌最近是否已确认「现搜也搜不出候选」
+      const [cachedCands, negative] = await Promise.all([
+        pickCachedAlternatives(failedItem),
+        readDegradeNegative(failedItem),
+      ]);
+      if (altTokenRef.current !== token) return;
+      // 层③ 命中 → 本轮不再花一次跨源现搜（A 队列内 / C 共享缓存两个 0 成本来源照常尝试）；
+      // 现搜被挡下时 crossTried 保持 false，收尾也不会再刷新负缓存 TTL（不会无限续期）
+      const allowCrossSearch = behavior.crossSearch && !negative.hit;
       while (altTokenRef.current === token) {
         const st = altStateRef.current;
-        if (st.count >= MAX_AUTO_ALT_ATTEMPTS || !list) return;
+        if (st.count >= behavior.maxAttempts || !list) return;
         // 队列内候选只保留「本轮尚未自动尝试过」的版本：自动尝试已失败的版本
         // 不在这轮里重复给用户，避免人工选版面板把刚自动失败过的条目又摆出来
         const queueCands = pickQueueAlternatives(list, failedItem).filter(
           (c) => !st.triedKeys.has(musicKey(c.item))
         );
-        // 队列内已无自动可试 → 去其它可搜可播音源现搜同名歌曲（仅一轮）
-        if (!queueCands.some((c) => c.auto) && !crossTried) {
+        const cachedAvail = cachedCands.filter(
+          (c) => !st.triedKeys.has(musicKey(c.item))
+        );
+        // 队列内与共享缓存都没得自动尝试 → 才去现搜（现搜最贵，放最后）
+        if (
+          !queueCands.some((c) => c.auto) &&
+          !cachedAvail.some((c) => c.auto) &&
+          !crossTried &&
+          allowCrossSearch
+        ) {
           crossTried = true;
           setAltNote("当前列表没有其它可播版本，正在跨音源现搜同名歌曲…");
           const cross = await suggestCrossCandidates(failedItem, token);
@@ -492,16 +554,30 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
         }
         const pool = mergeAltCandidates(
           queueCands,
+          cachedAvail,
           crossCands.filter((c) => !st.triedKeys.has(musicKey(c.item)))
         );
-        if (pool.length) setAlternatives(pool);
+        // 人工选版面板关闭时不暴露候选：仅保留下方最终错误文案
+        if (pool.length && behavior.showManualDialog) setAlternatives(pool);
         const next = pool.find((c) => c.auto);
         if (!next) {
           // 全部自动候选已尝试尽且仍无结果 → 提示最终结果；仍有未尝试的
           // 人工候选则经 alternatives 暴露，UI 弹面板人工选版
-          if (crossTried && st.count > 0) {
+          // 层③ 写回（musicEngine.md §7.1 的写回条件）：降级轮以 fail/manual 收尾
+          // + 层① 一条可用候选都没给出（无缓存命中）+ 本轮真跑过现搜 → 10min 内同曲
+          // 不再重复触发整轮现搜，防止「烂歌」反复烧上游请求。
+          // 层① 有候选却没播成不记负：那是层④ 逐版本黑名单的职责，下一轮仍值得搜新版本。
+          if (crossTried && cachedCands.length === 0) {
+            reportDegradeNegative(
+              failedItem,
+              st.count > 0 ? "all-attempts-failed" : "no-candidate"
+            );
+          }
+          if (st.count > 0 && (crossTried || !behavior.crossSearch)) {
             setPlayError(
-              "已自动尝试同曲其它版本并跨音源现搜，仍无可播放结果；可换一个音源重新搜索"
+              crossTried
+                ? "已自动尝试同曲其它版本并跨音源现搜，仍无可播放结果；可换一个音源重新搜索"
+                : "已自动尝试同曲其它版本，仍无可播放结果；可换一个音源重新搜索"
             );
           }
           return;
@@ -525,7 +601,12 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   /** 单次播放尝试：请求直链并就绪。resolve 失败时把错误写入快照并返回 false（不做换源决策） */
   const attemptPlay = async (
     item: SearchItem,
-    index: number
+    index: number,
+    /**
+     * 直链就绪后是否自动起播。恢复播放会话传 false：只加载并定位到上次进度，
+     * 由用户点播放键续听（恢复不在用户手势内，自动播放必被浏览器策略拦截）。
+     */
+    autoplay = true
   ): Promise<boolean> => {
     setPicked(item);
     setCurrentIndex(index);
@@ -550,7 +631,8 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
       );
       if (controller.signal.aborted) return false;
       setDirect(data);
-      autoplayRef.current = true; // 直链就绪后自动续播（含自动换源成功的情形）
+      autoplayRef.current = autoplay; // 直链就绪后是否自动续播（自动换源成功 = true；会话恢复 = false）
+      reportSourceHealth(item.source || source, true, "resolve"); // 层⑥：该源取链成功
       setFailStage(null); // 播放已就绪，清除此前（含自动换源候选）记录的失败阶段
       setAlternatives([]); // 已可播放：本轮候选快照作废（避免陈旧候选在后续质量档失败时误弹人工面板）
       return true;
@@ -567,6 +649,9 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
           : "未获取到可播放的直链，可能受版权或会员限制，试试其他歌曲或切换音质";
       setPlayError(msg);
       setFailStage("resolve");
+      // 层④/⑥：记下该版本取链失败（TTL 按失败类别分级）与该源本次结果
+      reportTrackFailure(item, "resolve", msg);
+      reportSourceHealth(item.source || source, false, "resolve", undefined, msg);
       return false;
     } finally {
       if (directAbortRef.current === controller) {
@@ -574,6 +659,34 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
         directAbortRef.current = null;
       }
     }
+  };
+
+  /**
+   * 恢复上次播放会话（见 playback-session.ts）：重新载入曲目并取直链，定位到上次进度。
+   *
+   * 与 playTrack 的差异：
+   * - **不自动起播**（恢复不在用户手势内）——直链就绪后 seek 到上次位置并保持暂停，
+   *   用户点播放键即从此处续听；
+   * - **不进自动换源闭环**——恢复只是便利功能，失败就按常规 playError 提示，
+   *   不替用户消耗跨源请求；用户重新点歌时再走完整换源流程。
+   */
+  const restorePlayback = async (
+    item: SearchItem,
+    index: number,
+    atSec = 0
+  ): Promise<void> => {
+    const token = altTokenRef.current + 1;
+    altTokenRef.current = token;
+    altInFlightRef.current = false;
+    crossAbortRef.current?.abort(); // 中止挂载瞬间可能存在的在途跨源现搜
+    qualitySwitchAtRef.current = 0;
+    altStateRef.current = { triedKeys: new Set([musicKey(item)]), count: 0 };
+    setFailStage(null);
+    setAlternatives([]);
+    setAutoTrying(false);
+    setAltNote("");
+    resumeAtRef.current = atSec > 0 ? atSec : 0;
+    await attemptPlay(item, index, false);
   };
 
   /**
@@ -598,10 +711,16 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     if (Date.now() - qualitySwitchAtRef.current < QUALITY_SWITCH_MEDIA_WINDOW_MS) {
       setPlayError("该音质直链不可播放，请尝试切换其他音质");
       setFailStage("play");
+      reportSourceHealth(item.source || source, false, "quality");
       return;
     }
     setPlayError("播放失败：音频直链可能已失效或该源限制播放");
     setFailStage("play");
+    // 层④/⑥：直链取到了但媒体层播不动（防盗链 / 已失效）——该版本记为失败
+    reportTrackFailure(item, "play", "音频直链可能已失效或该源限制播放");
+    reportSourceHealth(item.source || source, false, "play");
+    // 自动换源关闭：仅提示，不进入换源闭环（避免 autoTrying 常亮）
+    if (!getMusicBehavior().enabled) return;
     setAutoTrying(true);
     void runAutoFallback(item, altTokenRef.current);
   };
@@ -698,6 +817,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
         BR_LABEL[nextBr] ??
         `${nextBr}kbps`;
       notify("ok", `已切换音质：${okLabel}`);
+      reportSourceHealth(picked.source || source, true, "quality");
     } catch (err) {
       if (controller.signal.aborted) return;
       // 失败：回滚档位；若有旧直链则保留它继续播放
@@ -712,6 +832,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
         notify("err", `音质获取失败：${msg}`);
         setPlayError(msg);
       }
+      reportSourceHealth(picked.source || source, false, "quality", undefined, msg);
     } finally {
       if (directAbortRef.current === controller) {
         setFetching(false);
@@ -725,7 +846,15 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     ref: setAudioEl,
     src: direct?.url,
     preload: "metadata",
-    onPlay: () => setPlaying(true),
+    onPlay: () => {
+      setPlaying(true);
+      // 层①写入条件：**真实出声**才算播放成功（取到直链不算，直链可播≠能播）
+      const it = picked;
+      if (it) {
+        reportPlaybackCandidate(it);
+        reportSourceHealth(it.source || source, true, "play");
+      }
+    },
     onPause: () => setPlaying(false),
     onEnded: handleEnded,
     onError: handleMediaError,
@@ -754,6 +883,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     loop,
     // 播放命令（引擎对外的统一操作面）
     playTrack,
+    restorePlayback,
     playPrev,
     playNext,
     togglePlay,

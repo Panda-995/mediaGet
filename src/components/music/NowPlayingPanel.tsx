@@ -24,6 +24,7 @@ import { PlatformIcon } from "@/components/music/platform-icons";
 import { sourceMetaFor, type SearchChip } from "./source-meta";
 import IconButton from "./icon-btn";
 import { EqBars } from "./eq-bars";
+import { PseudoSpectrum } from "./pseudo-spectrum";
 
 export interface NowPlayingPanelProps {
   picked: SearchItem | null;
@@ -107,11 +108,14 @@ export default function NowPlayingPanel({
           </span>
         )}
       </button>
+      {/* 外圈音浪：原生 Canvas 画的伪频谱环（几何与动态见 pseudo-spectrum.tsx，
+          画布框取封面 120%，样式见 .mp-spectrum） */}
+      <PseudoSpectrum playing={playing} />
     </div>
   );
 
   return (
-    <aside className="mp-now">
+    <aside className={playing ? "mp-now is-playing" : "mp-now"}>
       <div className="mp-now-flag">
         {picked ? (
           <>
@@ -164,7 +168,7 @@ export default function NowPlayingPanel({
               <Download />
             </IconButton>
           ) : (
-            // 真实源地址即文件：lx 扩展源 / GD 直连模式 → 新标签打开源文件后另存
+            // 真实源地址即文件：GD 直连模式 → 新标签打开源文件后另存
             <IconButton
               href={download.url}
               external

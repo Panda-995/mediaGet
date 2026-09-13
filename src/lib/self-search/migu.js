@@ -70,8 +70,7 @@ export function parseMiguSearch(json) {
       if (!data || !data.songId || !data.copyrightId) continue;
       if (seen.has(data.copyrightId)) continue;
       seen.add(data.copyrightId);
-      // songId 用于平台内识别；咪咕取链以 contentId（cid）为标准，缺失时退回 songId，
-      // 供「配置 lx 音源后由音源脚本同曲换链」兜底使用。
+      // songId 用于平台内识别；咪咕取链以 contentId（cid）为标准，缺失时退回 songId。
       const playId = String(data.contentId || data.songId || "");
       items.push({
         id: String(data.songId),

@@ -46,6 +46,11 @@ next-env.d.ts
 # playwright mcp
 .playwright-mcp/
 
+# playwright-cli 本地快照/日志（页面 a11y dump，工具产物，不进版本库）
+.playwright-cli/
+/login.yaml
+/panel.yaml
+
 # workbuddy 项目记忆（本地工具数据，不进版本库）
 .workbuddy/
 

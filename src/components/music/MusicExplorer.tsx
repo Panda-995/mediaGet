@@ -1,7 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AlertCircle, Check, Loader2 } from "lucide-react";
+import Link from "next/link";
+import { AlertCircle, Check, Loader2, SlidersHorizontal } from "lucide-react";
 import {
   SEARCH_SOURCES,
   SELF_SEARCH_SOURCES,
@@ -9,7 +10,6 @@ import {
 } from "@/components/music/types";
 import {
   coverBinUrl,
-  fetchLxCatalog,
   requestAmllLyric,
   requestLyric,
   requestPic,
@@ -19,10 +19,9 @@ import {
   sourceEngineKindFor,
   sourceSupportsAmllLyric,
   SELF_ONLY_ENGINE_KEYS,
-  type LxSearchSource,
   type SearchItem,
 } from "@/lib/music-client";
-import { aggregateAndRankSearch } from "@/lib/music-match";
+import { aggregateAndRankSearch, dedupeSearchItems, musicKey } from "@/lib/music-match";
 import {
   getPlatformCaps,
   isPlatformSearchOn,
@@ -30,8 +29,10 @@ import {
   type MusicPlatformFlags,
 } from "@/lib/music-caps";
 import {
+  restoreMusicView,
   setMusicView,
   useMusicView,
+  type MusicView,
 } from "@/components/music/music-view-store";
 import MusicViewSeg from "@/components/music/MusicViewSeg";
 import { cn } from "@/lib/utils";
@@ -42,11 +43,29 @@ import {
 import { buildSearchChips } from "./source-meta";
 import { useCopyFlash, writeClipboard } from "./use-copy-flash";
 import {
+  canRestorePlaylistSnapshot,
   clearPlaylistSnapshot,
   isSameListHead,
   readPlaylistSnapshot,
   writePlaylistSnapshot,
 } from "./playlist-cache";
+import {
+  clearSearchHistory,
+  pushSearchHistory,
+  readSearchHistory,
+  removeSearchHistory,
+} from "./search-history";
+import {
+  clearPlaybackSession,
+  readPlaybackSession,
+  writePlaybackSession,
+} from "./playback-session";
+import {
+  readCachedLyric,
+  readCachedPalette,
+  writeCachedLyric,
+  writeCachedPalette,
+} from "./media-cache";
 import {
   getActiveLyricIndex,
   parseLrc,
@@ -61,6 +80,7 @@ import SearchPanel from "./SearchPanel";
 import PlaylistPanel from "./PlaylistPanel";
 import NowPlayingPanel from "./NowPlayingPanel";
 import { usePlayerEngine } from "./use-player-engine";
+import { useMediaSession } from "./use-media-session";
 
 /** 「搜索渠道」偏好缓存 key（localStorage）：{ v, agg, source }。
  *  只在用户在搜索面板上做显式选择（点单平台 chip / 点聚合 chip / 提交关键词搜索）时写入——
@@ -69,9 +89,11 @@ import { usePlayerEngine } from "./use-player-engine";
  *  v 为结构版本：无版本号的旧记录（历史版本会把被动状态也写入缓存）视为无效，忽略并回默认聚合。 */
 const SEARCH_CHANNEL_KEY = "mp-search-channel";
 const SEARCH_CHANNEL_VERSION = 2;
-/** 挂载初期即可用（不依赖 lx 目录）的内置源 key 全集（静态注册表）；
+/** 上次播放会话落盘节流（ms）：timeupdate 约 4Hz，不能每次进度变化都写 localStorage */
+const SESSION_WRITE_INTERVAL_MS = 5000;
+/** 挂载初期即可用的内置源 key 全集（静态注册表）；
  *  缓存的 source 能否恢复还须过平台引擎开关（isPlatformSearchOn，见 readSearchChannelPref）——
- *  全集含默认停用的 tencent，但恢复绝不落到「引擎已关」的平台。 */
+ *  全集含全部内置源，但恢复绝不落到「引擎已关」的平台。 */
 const BUILTIN_SOURCE_KEYS = new Set(
   [...SEARCH_SOURCES, ...SELF_SEARCH_SOURCES].map((s) => s.key)
 );
@@ -119,9 +141,13 @@ function writeSearchChannelPref(agg: boolean, source: SearchSourceKey): void {
  * 歌词不常驻页面：点击底部播放栏的歌曲封面弹出整页歌词。
  * 数据侧只走 /api/music（search / url / pic / lyric）。
  */
-export default function MusicExplorer() {
+/**
+ * @param initialView 服务端从 Cookie 读到的视图落点（见 src/app/music/page.tsx）：
+ * 决定首帧渲染哪块面板——刷新时不再先闪「发现歌曲」再跳回「播放列表」。
+ */
+export default function MusicExplorer({ initialView }: { initialView?: MusicView }) {
   // —— 视图（由内容区功能区左上角的「发现歌曲 / 播放列表」切换器驱动）与搜索 ——
-  const tab = useMusicView();
+  const tab = useMusicView(initialView);
   // 搜索渠道偏好（mp-search-channel）：首次进入（无缓存）默认聚合搜索；
   // 之后记住上次选的渠道——聚合 or 单平台（含单源模式下选中的平台，供退出聚合后回显）。
   // ⚠️ 不能在 useState 初始化里读 localStorage（旧实现 useState(readSearchChannelPref)）：
@@ -131,8 +157,6 @@ export default function MusicExplorer() {
   const [source, setSource] = useState<SearchSourceKey>(SEARCH_SOURCES[0].key);
   /** 聚合搜索模式：一次并发搜索全部可用音源，跨源合并去重 + 相关度打分排序展示 */
   const [aggActive, setAggActive] = useState(true);
-  /** 部署侧启用 lx 音源脚本后动态加载的扩展搜索源（/api/music/lx?action=sources） */
-  const [extSources, setExtSources] = useState<LxSearchSource[]>([]);
   /** 部署期平台引擎开关矩阵（初始 = music-caps 模块默认；/api/music/caps 成功后覆盖并触发 chips 重算） */
   const [platformCaps, setPlatformCaps] = useState<MusicPlatformFlags>(() =>
     getPlatformCaps()
@@ -142,6 +166,11 @@ export default function MusicExplorer() {
   const [searchedKw, setSearchedKw] = useState("");
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
+  /** 挂载期是否仍在从本地快照恢复播放列表：true 时列表区显示「恢复中」占位，
+   *  避免 SSR 首帧（拿不到 localStorage）先闪一下「播放列表还是空的」再出列表 */
+  const [restoring, setRestoring] = useState(true);
+  /** 最近搜索关键词（本机缓存，见 search-history.ts）：挂载后恢复，空数组则不渲染该行 */
+  const [history, setHistory] = useState<string[]>([]);
 
   // —— 查找方式（发现歌曲页内二级切换）：关键词搜索 / 粘贴链接解析 ——
   const [mode, setMode] = useState<"search" | "resolve">("search");
@@ -153,8 +182,6 @@ export default function MusicExplorer() {
   const [hasMore, setHasMore] = useState(false);
   const [paging, setPaging] = useState(false);
   const [pageErr, setPageErr] = useState("");
-  /** 缓存恢复的列表若属于 lx 扩展源：目录未加载完时先挂起，chip 可用后再回填 */
-  const [restoreListSource, setRestoreListSource] = useState<string | null>(null);
 
   // —— 播放会话（编排 + HTML5 transport）收敛在 use-player-engine ——
   // 复制直链的「已复制」2s 临时态（详情弹窗内的复制歌曲信息各自维护，见 TrackInfoDialog）
@@ -219,15 +246,15 @@ export default function MusicExplorer() {
   const listTopRef = useRef<HTMLDivElement | null>(null);
   /** 加载下一页防重入标记（ref 保证 onScroll / 补屏两个触发源不会并发翻页） */
   const pagingRef = useRef(false);
+  /** 上次播放会话落盘状态：已落盘曲目 key + 时刻（切歌立即写 / 同曲进度节流写） */
+  const sessionKeyRef = useRef("");
+  const sessionWriteAtRef = useRef(0);
 
-  /** 全部可选的搜索源 chip：平台全集（内置 GD 源 + 自研直连源 + 动态 lx 扩展源）∩ 搜索引擎开关
+  /** 全部可选的搜索源 chip：平台全集（内置 GD 源 + 自研直连源）∩ 搜索引擎开关
    *  （music-caps，默认与部署一致；caps 到达后随本地矩阵更新重算）。开关关闭的平台不展示 → 不可被搜索。 */
   const sourceChips = useMemo(
-    () =>
-      buildSearchChips(extSources).filter((c) =>
-        isPlatformSearchOn(c.key, platformCaps)
-      ),
-    [extSources, platformCaps]
+    () => buildSearchChips().filter((c) => isPlatformSearchOn(c.key, platformCaps)),
+    [platformCaps]
   );
 
   const sourceMeta = sourceChips.find((s) => s.key === source) ?? sourceChips[0];
@@ -242,55 +269,27 @@ export default function MusicExplorer() {
   }, [sourceChips]);
 
   /** 直链能力排序（聚合跨源同曲取“主副本”时用，rank 小者优先）：
-   *  gd（0，GD 通道直链/多档音质最稳）> lx 扩展源与 kugou（1，均有可播直链路径——脚本源
-   *  自带取链 / 酷狗内置官方试听直链 128k）> migu（2，SELF_ONLY_ENGINE_KEYS 无内置直链引擎，
-   *  仅配置 lx 音源兜底后才可播）。 */
+   *  gd（0，GD 通道直链/多档音质最稳）> kugou（1，内置官方试听直链 128k）
+   *  > migu（2，SELF_ONLY_ENGINE_KEYS 无内置直链引擎，不可播）。 */
   const playableKindRank = (item: SearchItem) => {
     const source = item.source || "";
     const kind = sourceEngineKindFor(source);
-    if (kind !== "self") return kind === "lx" ? 1 : 0;
+    if (kind !== "self") return 0;
     return SELF_ONLY_ENGINE_KEYS.has(source) ? 2 : 1;
   };
-
-  // 挂载时拉一次 lx 扩展源目录（成功后才出现扩展 chip；失败保持仅内置源，静默）。
-  // 不传 AbortSignal：music-client 内共享 inflight，StrictMode 双挂载下首个 abort
-  // 会导致共享请求被取消，故仅用 disposed 标志避免卸载后 setState。
-  useEffect(() => {
-    let disposed = false;
-    fetchLxCatalog()
-      .then((cat) => {
-        if (disposed) return;
-        setExtSources(cat.searchSources || []);
-      })
-      .catch(() => {
-        /* 目录不可用（未配置 / 通道故障）不打扰用户 */
-      });
-    return () => {
-      disposed = true;
-    };
-  }, []);
 
   // 拉取部署期平台引擎开关（MUSIC_PLATFORM_SEARCH / PLAY）：成功后把矩阵拷进本地状态并触发
   // chips 重算。默认矩阵与后端一致，故失败 / 未到达时 UI 与后端行为仍然吻合，不打扰用户。
   useEffect(() => {
     let disposed = false;
     refreshPlatformCaps().then((c) => {
-      if (!disposed) setPlatformCaps(c);
+      if (disposed) return;
+      setPlatformCaps(c);
     });
     return () => {
       disposed = true;
     };
   }, []);
-
-  // 缓存恢复的列表若来自 lx 扩展源：等目录就绪、chip 出现后回填 source，
-  // 保证后续“继续加载更多”等请求仍走同一个扩展源通道
-  useEffect(() => {
-    if (!restoreListSource) return;
-    if (extSources.some((s) => s.key === restoreListSource)) {
-      setSource(restoreListSource as SearchSourceKey);
-      setRestoreListSource(null);
-    }
-  }, [extSources, restoreListSource]);
 
   useEffect(() => {
     return () => {
@@ -303,42 +302,76 @@ export default function MusicExplorer() {
   }, []);
 
   // 挂载期本地恢复（仅在客户端执行；不能在 useState 初始化读 localStorage，见渠道偏好处注释）：
-  //   1) 渠道偏好 mp-search-channel → 恢复聚合开关与「退出聚合后的回显平台」（无记录 → 保持默认）；
-  //   2) 播放列表本地缓存：仅当「上次在搜索面板上显式选过单平台渠道、且列表快照来源与该渠道一致」时，
-  //      才回放该列表（继续上次会话、刷新后列表不销毁）。其余情况视为一次新的搜索会话——首屏保持
+  //   1) 视图偏好 mp-music-view → 刷新后停在「发现歌曲」还是「播放列表」**只看它**（唯一入口）。
+  //      Cookie 可用时落点已由服务端读出（page.tsx 的 initialView）在首帧定好，此处不再重复恢复；
+  //   2) 渠道偏好 mp-search-channel → 恢复聚合开关与「退出聚合后的回显平台」（无记录 → 保持默认）；
+  //   3) 播放列表本地缓存：仅当「上次在搜索面板上显式选过单平台渠道、且列表快照来源与该渠道一致」时，
+  //      才回填该列表（继续上次会话、刷新后列表不销毁）。其余情况视为一次新的搜索会话——首屏保持
   //      默认（聚合搜索），并把可能残留的旧单源快照清掉，避免上次浏览过的平台（如 QQ音乐）每次打开
   //      都把界面拖回它的单源列表。
+  //   4) 最近搜索关键词 mp-search-history → 搜索框下方「最近搜索」行（见 search-history.ts）。
+  //
+  // ⚠️ 分工边界（此处踩过坑）：快照回填只负责列表数据，**不得写视图**。历史实现里快照恢复会
+  //    无条件 setMusicView("playlist")，既覆盖用户显式切到的「发现歌曲」，又把 mp-music-view 就地
+  //    改写成 playlist（此后每次刷新都被拖回播放列表）；而视图恢复当时还散在 MusicViewSeg 子组件
+  //    的 effect 里，子先父后执行，最终落点取决于组件树顺序。现在视图恢复收敛到本 effect 一处。
   useEffect(() => {
+    // 最近搜索是纯个人行为明细、只留本机，挂载后再读（水合安全）
+    setHistory(readSearchHistory());
+    // 视图偏好回落：Cookie 可用时落点已在首帧由 initialView 定好（见 page.tsx），再恢复一次
+    // 等于重复恢复；这里只兜底「服务端没读到 Cookie」（首次访问 / Cookie 被禁用）
+    if (!initialView) restoreMusicView();
     const pref = readSearchChannelPref();
     if (pref) {
       setAggActive(pref.agg);
       setSource(pref.source);
     }
     const snap = readPlaylistSnapshot();
-    if (!snap || !snap.list.length) return;
-    if (!pref || pref.agg || pref.source !== snap.source) {
-      clearPlaylistSnapshot();
+    if (!snap || !snap.list.length) {
+      // 无可续会话（首次进入 / 上次是空结果）：结束「恢复中」占位，落到正常空态
+      setRestoring(false);
       return;
     }
-    // pref 为单平台渠道且与快照来源一致：回填列表并停在播放列表视图（pref.agg 已保证
-    // aggActive 为 false；snap.source 必为内置源，chip 就绪）
+    // 渠道偏好不是「与该快照来源一致的单平台渠道」→ 视为新的搜索会话，清掉残留快照
+    if (!canRestorePlaylistSnapshot(pref, snap)) {
+      clearPlaylistSnapshot();
+      setRestoring(false);
+      return;
+    }
+    // 本次会话可续：回填列表 / 关键词 / 翻页进度（pref.agg 已保证 aggActive 为 false；
+    // snap.source 必为内置源，chip 就绪）。**不动视图**——落点由 Cookie（首帧）/ 上面的
+    // restoreMusicView() 兜底决定（见本 effect 顶部 ⚠️ 分工边界）
     setSource(snap.source as SearchSourceKey);
     setKeyword(snap.kw);
     setSearchedKw(snap.kw);
-    setList(snap.list);
+    // 去重是后加的口径，旧快照里可能已存有重复条目，恢复时统一清洗；下面的会话定位必须
+    // 用清洗后的数组与下标，否则下标会与界面上的行错位（见 dedupeSearchItems）
+    const restored = dedupeSearchItems(snap.list);
+    setList(restored);
     setPage(snap.page);
     setHasMore(snap.hasMore);
-    setMusicView("playlist");
+    // 上次播放会话：同一队列来源下，把上次的曲目与进度恢复进播放条——引擎重新取直链并
+    // 定位到上次位置，保持暂停态（不自动出声），用户点播放键即续听（见 playback-session.ts）
+    const session = readPlaybackSession();
+    if (session && session.source === snap.source) {
+      const idx = restored.findIndex(
+        (it) => it.source === session.item.source && it.id === session.item.id
+      );
+      if (idx >= 0) void restorePlayback(restored[idx], idx, session.timeSec);
+    } else if (session) {
+      // 会话来源与本次恢复的队列不一致（换过渠道 / 换过关键词）：旧进度已无意义
+      clearPlaybackSession();
+    }
+    // 回填结束：列表区退出「恢复中」占位
+    setRestoring(false);
     // 本 effect 只在挂载执行一次：pref / 回填用到的 setState 为稳定引用，pref 取当次读取值
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // 播放列表本地缓存：列表内容 / 页号变化即写快照（list 为 null 是新请求中或切源清空，
   // 暂不落盘；空结果 [] 则清除旧快照，避免下次刷新错误地恢复上一次的旧列表）
   useEffect(() => {
     if (list === null) return;
-    // 缓存恢复的列表来源 chip 尚未回填（lx 目录加载中）时先不重写快照，
-    // 等 extSources 就绪后 source 变化会触发本 effect 以正确来源落盘
-    if (restoreListSource) return;
     // 聚合结果不落快照：列表来源混合（非单一 source），刷新后无从恢复；
     // 避免把聚合列表误存为“最近一次单源搜索”干扰后续恢复语义
     if (aggActive) return;
@@ -347,7 +380,7 @@ export default function MusicExplorer() {
       return;
     }
     writePlaylistSnapshot({ kw: searchedKw, source, page, hasMore, list });
-    // restoreListSource / aggActive 刻意不入依赖：上面有早退守卫，不因守卫状态翻转触发重写
+    // aggActive 刻意不入依赖：上面有早退守卫，不因守卫状态翻转触发重写
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [list, searchedKw, source, page, hasMore]);
 
@@ -387,6 +420,7 @@ export default function MusicExplorer() {
     setLoop,
     setSeeking,
     resetSession,
+    restorePlayback,
     audioProps,
   } = usePlayerEngine({
     list,
@@ -396,7 +430,41 @@ export default function MusicExplorer() {
     notify: showToast,
   });
 
-  /** 清空播放会话（播放状态由引擎 resetSession 复位，封面/歌词数据随之联动清空），供搜索/切源/解析前调用 */
+  // 上次播放会话落盘：切歌立即写；同一首歌的进度按 5s 节流（timeupdate 约 4Hz）。
+  // 落盘内容见 playback-session.ts（只存曲目与进度，不存直链），恢复在挂载 effect 里做
+  useEffect(() => {
+    if (!picked) return;
+    const key = musicKey(picked);
+    const now = Date.now();
+    const switched = key !== sessionKeyRef.current;
+    if (!switched && now - sessionWriteAtRef.current < SESSION_WRITE_INTERVAL_MS) return;
+    sessionKeyRef.current = key;
+    sessionWriteAtRef.current = now;
+    writePlaybackSession({
+      source: picked.source || source,
+      item: picked,
+      timeSec: currentTime,
+    });
+  }, [picked, source, currentTime]);
+
+  // 系统媒体会话（Windows 通知栏 / 锁屏 / 系统媒体键）：元数据用当前封面，未获取封面时
+  // 回退到该曲目所属音乐平台的品牌 logo；站点标题同步为「歌曲 - 歌手」。见 use-media-session.ts
+  useMediaSession({
+    track: picked,
+    coverUrl,
+    coverFailed,
+    playing,
+    currentTime,
+    duration,
+    onPlay: togglePlay,
+    onPause: togglePlay,
+    onPrev: playPrev,
+    onNext: playNext,
+    onSeek: seek,
+  });
+
+  /** 清空播放会话（播放状态由引擎 resetSession 复位，封面/歌词数据随之联动清空），供搜索/切源/解析前调用；
+   *  同时清掉「上次播放会话」本地快照——用户已显式换了上下文，旧进度不应再被恢复 */
   const resetPlayer = () => {
     lyricAbortRef.current?.abort();
     setCoverUrl("");
@@ -405,8 +473,34 @@ export default function MusicExplorer() {
     setLyricRaw("");
     setLyricError("");
     setAmllRich(null);
+    clearPlaybackSession();
     resetSession();
   };
+
+  /**
+   * 用「LRC 原文 + AMLL TTML 原文」刷新歌词三态。
+   * 在线请求结果与本地缓存命中走同一套落值逻辑，避免两条路径的渲染分支漂移。
+   * @returns 是否渲染出了可用歌词（false = 两个通道都没有内容）
+   */
+  const applyLyricData = useCallback((lrc: string, amllTtml: string): boolean => {
+    const rich = amllTtml ? parseTtmlAmll(amllTtml) : null;
+    const richOk = rich && rich.timed.length ? rich : null;
+    if (lrc) {
+      const lines = parseLrc(lrc);
+      setLyricRaw(lrc);
+      setLyricLines(lines.length ? lines : null);
+      // 词库命中 → 整页视图改用真逐字渲染；未命中保持 LRC 估算
+      setAmllRich(richOk);
+      return true;
+    }
+    if (richOk) {
+      // 平台 LRC 通道失败但词库命中：用词库句级行顶替，避免整页空态报错
+      setLyricLines(richOk.timed);
+      setAmllRich(richOk);
+      return true;
+    }
+    return false;
+  }, []);
 
   // 换曲（含上下首 / 自动续播 / 重置清空）即复位「直链已复制」指示，避免切歌后短暂误读旧直链
   useEffect(() => {
@@ -463,10 +557,14 @@ export default function MusicExplorer() {
     if (searchAbortRef.current) searchAbortRef.current.abort();
     const controller = new AbortController();
     searchAbortRef.current = controller;
+    // 上面可能打断了在途的翻页请求，而它的 finally 因 controller 已被顶替不会清锁
+    // （见 goToPage），这里必须同步放开，否则 paging 卡在 true 后列表再也拉不动下一页
+    pagingRef.current = false;
+    setPaging(false);
     // 提交关键词搜索即视为在该渠道上的一次显式使用：记录「聚合 / 单平台 + 平台」偏好
     writeSearchChannelPref(aggActive, source);
-    // 用户发起了新搜索：取消“缓存来源 chip 待回填”，以当前选择为准
-    setRestoreListSource(null);
+    // 记一条最近搜索（最新在前 / 去重 / 上限 8）：热门标签与历史词点选同样算一次显式搜索
+    setHistory(pushSearchHistory(kw));
 
     setSearching(true);
     setSearchError("");
@@ -498,7 +596,9 @@ export default function MusicExplorer() {
           betterPrimary: (a, b) => playableKindRank(a) < playableKindRank(b),
         });
         if (agg.items.length > 0) {
-          setList(agg.items);
+          // 聚合按内容合并，理论上不会给出同一 source:id 两遍；仍统一过一遍去重，
+          // 保证「列表内 musicKey 唯一」这条不变式（React key 直接取它，见 dedupeSearchItems）
+          setList(dedupeSearchItems(agg.items));
           if (failed.length > 0) {
             setPageErr(`以下音源搜索失败，已跳过：${failed.map(labelOf).join(" / ")}`);
           }
@@ -535,11 +635,11 @@ export default function MusicExplorer() {
         cached.source === source &&
         isSameListHead(freshItems, cached.list)
       ) {
-        setList(cached.list);
+        setList(dedupeSearchItems(cached.list));
         setPage(cached.page);
         setHasMore(Boolean(cached.hasMore));
       } else {
-        setList(freshItems);
+        setList(dedupeSearchItems(freshItems));
         setPage(data.page || 1);
         setHasMore(Boolean(data.hasMore));
       }
@@ -569,8 +669,6 @@ export default function MusicExplorer() {
     if (resolveAbortRef.current) resolveAbortRef.current.abort();
     const controller = new AbortController();
     resolveAbortRef.current = controller;
-    // 用户主动解析链接：取消“缓存来源 chip 待回填”，以解析产物平台为准
-    setRestoreListSource(null);
 
     setResolving(true);
     setResolveError("");
@@ -630,9 +728,7 @@ export default function MusicExplorer() {
       !searchedKw ||
       searching ||
       targetPage < 1 ||
-      pagingRef.current ||
-      // 缓存恢复的列表来源 chip 尚未回填（lx 目录加载中）时不抢先按默认源翻页
-      Boolean(restoreListSource)
+      pagingRef.current
     )
       return;
     if (searchAbortRef.current) searchAbortRef.current.abort();
@@ -655,7 +751,9 @@ export default function MusicExplorer() {
         setHasMore(false);
         return;
       }
-      setList((prev) => [...(prev || []), ...items]);
+      // 翻页累积是重复条目的入口：双通道（自研 / GD 兜底）id 空间相同但分页窗口错位，
+      // 同一条会被第二遍给回来（见 dedupeSearchItems），故并入时按 musicKey 收敛
+      setList((prev) => dedupeSearchItems([...(prev || []), ...items]));
       setPage(data.page || targetPage);
       setHasMore(Boolean(data.hasMore));
     } catch (err) {
@@ -919,7 +1017,6 @@ export default function MusicExplorer() {
     setSource(next);
     // 显式点选单平台 chip：记为用户手选渠道（退出聚合后的回退值也随 source 记录）
     writeSearchChannelPref(false, next);
-    setRestoreListSource(null);
     setList(null);
     setHasMore(false);
     setPage(1);
@@ -929,13 +1026,20 @@ export default function MusicExplorer() {
     resetPlayer();
   };
 
+  /** 删除一条 / 清空全部最近搜索（本机缓存，见 search-history.ts）。历史只是输入便利，
+   *  与当前列表和播放队列无关，故不动列表、也不重置播放会话 */
+  const deleteHistory = (kw: string) => setHistory(removeSearchHistory(kw));
+  const clearHistory = () => {
+    clearSearchHistory();
+    setHistory([]);
+  };
+
   /** 切换聚合搜索模式：结果列表结构（单源 vs 混合源）不同，切换时清空避免误播/误翻页 */
   const toggleAggregate = () => {
     const next = !aggActive;
     setAggActive(next);
     // 显式切到聚合 / 退出聚合：记录偏好，供下次进入沿用当前模式
     writeSearchChannelPref(next, source);
-    setRestoreListSource(null);
     setList(null);
     setPage(1);
     setHasMore(false);
@@ -1007,17 +1111,29 @@ export default function MusicExplorer() {
     // 链接解析产物的封面为图床直链，无法走 GD bin 代理取色，跳过即可（直链 CORS 失败会静默回退默认配色）
     if (!picId && !picked.picUrlDirect) return;
     const srcName = picked.source || source;
-    // 同源 bin 字节代理仅 GD 源且同源代理可用时存在（lx 源封面为直链、直连模式下 bin 同样 502）；
+    // 同源 bin 字节代理仅 GD 源且同源代理可用时存在（self 源封面为直链、直连模式下 bin 同样 502）；
     // 无 bin 时仅尝试外部直链取色，取不到色就回退整页歌词默认配色（不阻断功能）
     const binUrl = !picked.picUrlDirect ? coverBinUrl(srcName, picId) : "";
     const controller = new AbortController();
     paletteAbortRef.current = controller;
+    // 配色只取决于「封面 + 主题模式」，结果是确定的：本地缓存命中即免掉一次图片降采样。
+    // key 用 picId / 曲目 id 而非封面 URL——图床直链可能带签名参数，每次不同会击穿缓存。
+    const paletteCacheKey = `${srcName}:${picId || picked.id || "cover"}|${
+      isDark ? "dark" : "auto"
+    }`;
     (async () => {
+      const cached = await readCachedPalette(paletteCacheKey);
+      if (controller.signal.aborted) return;
+      if (cached) {
+        setPalette(cached);
+        return;
+      }
       const pal = await sampleCoverPalette(coverUrl, binUrl, controller.signal, {
         mode: isDark ? "dark" : "auto",
       });
       if (controller.signal.aborted || !pal) return;
       setPalette(pal);
+      void writeCachedPalette(paletteCacheKey, pal);
     })();
     return () => controller.abort();
   }, [coverUrl, coverFailed, picked, source, isDark]);
@@ -1040,6 +1156,14 @@ export default function MusicExplorer() {
 
     const srcName = picked.source || source;
     (async () => {
+      // 本地缓存优先：歌词是准静态数据，命中即直接渲染（省掉一次第三方请求），
+      // 存储不可用时 readCachedLyric 返回 null，自动退回正常请求
+      const cached = await readCachedLyric(srcName, lyricId);
+      if (controller.signal.aborted) return;
+      if (cached && applyLyricData(cached.lrc, cached.amll)) {
+        setLyricsLoading(false);
+        return;
+      }
       const lrcTask = requestLyric(srcName, lyricId, controller.signal).then(
         (raw): { ok: true; raw: string } | { ok: false; err: unknown } => ({
           ok: true,
@@ -1050,34 +1174,33 @@ export default function MusicExplorer() {
           err,
         })
       );
+      // 词库通道取原始 TTML 字符串（而非解析结果）：缓存落盘与原串一致，命中后再解析
       const richTask = sourceSupportsAmllLyric(srcName)
         ? requestAmllLyric(srcName, lyricId, controller.signal)
-            .then((ttml) => (ttml ? parseTtmlAmll(ttml) : null))
-            .catch(() => null)
-        : Promise.resolve(null);
+            .then((ttml) => ttml || "")
+            .catch(() => "")
+        : Promise.resolve("");
 
-      const [lrcResult, richResult] = await Promise.all([lrcTask, richTask]);
+      const [lrcResult, amllTtml] = await Promise.all([lrcTask, richTask]);
       if (controller.signal.aborted) return;
-      const rich =
-        richResult && richResult.timed.length ? richResult : null;
-      if (lrcResult.ok) {
-        const lines = parseLrc(lrcResult.raw);
-        setLyricRaw(lrcResult.raw);
-        setLyricLines(lines.length ? lines : null);
-        // 词库命中 → 整页视图改用真逐字渲染；未命中保持 LRC 估算
-        setAmllRich(rich);
-      } else if (rich) {
-        // 平台 LRC 通道失败但词库命中：用词库句级行顶替，避免整页空态报错
-        setLyricLines(rich.timed);
-        setAmllRich(rich);
-      } else {
+      const hasLrc = lrcResult.ok && !!lrcResult.raw;
+      if (!applyLyricData(hasLrc ? lrcResult.raw : "", amllTtml) && !lrcResult.ok) {
         const err = lrcResult.err;
         setLyricError(err instanceof Error ? err.message : "歌词加载失败");
+      }
+      // 有内容才落缓存：双通道皆空 = 源不支持或暂时失败，不写负缓存，下次仍可重试
+      if (hasLrc || amllTtml) {
+        void writeCachedLyric(srcName, lyricId, {
+          lrc: hasLrc ? lrcResult.raw : "",
+          amll: amllTtml,
+        });
       }
       if (!controller.signal.aborted) setLyricsLoading(false);
     })();
 
     return () => controller.abort();
+    // applyLyricData 是稳定引用（useCallback []），不列入依赖
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [picked, source]);
 
   // 原始 LRC 转可下载 Blob：歌词就绪后详情弹窗里可点击超链接下载该 .lrc 文件
@@ -1233,7 +1356,15 @@ export default function MusicExplorer() {
       <div className="mp-body">
         <main className="mp-main">
           <div className="mp-tools">
-            <MusicViewSeg />
+            <MusicViewSeg initialView={initialView} />
+            {/* 平台引擎设置入口：跳转独立路由 /music/settings（需登录鉴权，改动全站生效） */}
+            <Link
+              className="mp-tools-btn"
+              href="/music/settings"
+              aria-label="平台引擎设置"
+              title="平台引擎设置（部署级开关与自动换源，需登录）">
+              <SlidersHorizontal />
+            </Link>
           </div>
           {tab === "search" ? (
             <SearchPanel
@@ -1257,9 +1388,13 @@ export default function MusicExplorer() {
               runSearch={runSearch}
               runResolve={runResolve}
               switchSource={switchSource}
+              history={history}
+              onRemoveHistory={deleteHistory}
+              onClearHistory={clearHistory}
             />
           ) : (
             <PlaylistPanel
+              restoring={restoring}
               searching={searching}
               searchedKw={searchedKw}
               list={list}

@@ -1,12 +1,16 @@
 // @ts-nocheck
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  MUSIC_BUILTIN_PLAY_DEFAULT,
   MUSIC_FLAG_PLATFORM_KEYS,
   MUSIC_PLATFORM_DEFAULT_FLAGS,
   enabledPlatformList,
+  isBuiltinPlayEnabled,
+  isBuiltinPlayLocked,
   isMusicPlatformEnabled,
   isPlatformPlayEnabled,
   isPlatformSearchEnabled,
+  resolveBuiltinPlayBaseline,
   resolveMusicPlatformFlags,
 } from "@/lib/music-platform-flags";
 
@@ -28,20 +32,18 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     ]);
   });
 
-  it("默认矩阵：tencent 搜索/播放全关，netease/kuwo/kugou/joox 可搜可播，migu 可搜不可播", () => {
+  it("默认矩阵：6 平台 search / play 两维全开", () => {
     const defaults = MUSIC_PLATFORM_DEFAULT_FLAGS;
-    expect(defaults.search.tencent).toBe(false);
-    expect(defaults.play.tencent).toBe(false);
-    expect(defaults.search.netease).toBe(true);
-    expect(defaults.play.netease).toBe(true);
-    expect(defaults.play.kugou).toBe(true); // 内置酷狗官方免费试听直链
-    expect(defaults.play.migu).toBe(false);
+    for (const key of MUSIC_FLAG_PLATFORM_KEYS) {
+      expect(defaults.search[key]).toBe(true);
+      expect(defaults.play[key]).toBe(true);
+    }
   });
 
-  it("未配置 env 时 = 默认", () => {
+  it("未配置 env 时 = 默认（全开）", () => {
     expect(resolveMusicPlatformFlags("search")).toEqual({
       netease: true,
-      tencent: false,
+      tencent: true,
       kugou: true,
       kuwo: true,
       migu: true,
@@ -49,10 +51,10 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     });
     expect(resolveMusicPlatformFlags("play")).toEqual({
       netease: true,
-      tencent: false,
+      tencent: true,
       kugou: true,
       kuwo: true,
-      migu: false,
+      migu: true,
       joox: true,
     });
   });
@@ -91,7 +93,7 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     vi.stubEnv('MUSIC_PLATFORM_SEARCH_DISABLED', "kuwo");
     expect(resolveMusicPlatformFlags("search")).toEqual({
       netease: true,
-      tencent: false,
+      tencent: true,
       kugou: true,
       kuwo: false,
       migu: true,
@@ -104,13 +106,18 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     const play = resolveMusicPlatformFlags("play");
     expect(play).toEqual({
       netease: true,
-      tencent: false,
+      tencent: true,
       kugou: false,
       kuwo: true,
-      migu: false,
+      migu: true,
       joox: false,
     });
-    expect(enabledPlatformList("play")).toEqual(["netease", "kuwo"]);
+    expect(enabledPlatformList("play")).toEqual([
+      "netease",
+      "tencent",
+      "kuwo",
+      "migu",
+    ]);
   });
 
   it("禁用黑名单是最终闸门：可压过 'all' / JSON 正向覆盖", () => {
@@ -134,7 +141,13 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     // joox 被合法禁用；未知键不影响其余平台
     expect(play.joox).toBe(false);
     expect(play.netease).toBe(true);
-    expect(enabledPlatformList("play")).toEqual(["netease", "kugou", "kuwo"]);
+    expect(enabledPlatformList("play")).toEqual([
+      "netease",
+      "tencent",
+      "kugou",
+      "kuwo",
+      "migu",
+    ]);
   });
 
   it("非法 JSON / 非法平台键被忽略，回到默认", () => {
@@ -150,22 +163,16 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     );
   });
 
-  it("enabledPlatformList 按全集顺序返回开启平台（默认不含 tencent）", () => {
-    expect(enabledPlatformList("search")).toEqual([
-      "netease",
-      "kugou",
-      "kuwo",
-      "migu",
-      "joox",
-    ]);
-    expect(enabledPlatformList("play")).toEqual(["netease", "kugou", "kuwo", "joox"]);
+  it("enabledPlatformList 按全集顺序返回开启平台（默认 6 平台全开）", () => {
+    expect(enabledPlatformList("search")).toEqual(MUSIC_FLAG_PLATFORM_KEYS);
+    expect(enabledPlatformList("play")).toEqual(MUSIC_FLAG_PLATFORM_KEYS);
   });
 
   it("MUSIC_PLATFORM_OFF 整体下线：列的平台的 search/play 一并强制关闭，其余保持默认", () => {
     vi.stubEnv("MUSIC_PLATFORM_OFF", "netease,kugou");
     expect(resolveMusicPlatformFlags("search")).toEqual({
       netease: false,
-      tencent: false,
+      tencent: true,
       kugou: false,
       kuwo: true,
       migu: true,
@@ -173,10 +180,10 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     });
     expect(resolveMusicPlatformFlags("play")).toEqual({
       netease: false,
-      tencent: false,
+      tencent: true,
       kugou: false,
       kuwo: true,
-      migu: false,
+      migu: true,
       joox: true,
     });
     expect(isPlatformSearchEnabled("netease")).toBe(false);
@@ -222,5 +229,49 @@ describe("music-platform-flags（平台搜索引擎 / 播放引擎开关）", ()
     expect(resolveMusicPlatformFlags("play")).toEqual(
       MUSIC_PLATFORM_DEFAULT_FLAGS.play
     );
+  });
+});
+
+describe("内置播放引擎总开关（MUSIC_BUILTIN_PLAY）", () => {
+  it("默认开启：未配置 / default / on 都是基线 true 且不锁定", () => {
+    expect(MUSIC_BUILTIN_PLAY_DEFAULT).toBe(true);
+    expect(resolveBuiltinPlayBaseline()).toBe(true);
+    expect(isBuiltinPlayLocked()).toBe(false);
+
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "default");
+    expect(resolveBuiltinPlayBaseline()).toBe(true);
+    expect(isBuiltinPlayLocked()).toBe(false);
+
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "on");
+    expect(resolveBuiltinPlayBaseline()).toBe(true);
+    expect(isBuiltinPlayLocked()).toBe(false);
+  });
+
+  it("off = 运维终闸：基线 false 且锁定（配置文档无法复活）", () => {
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "off");
+    expect(resolveBuiltinPlayBaseline()).toBe(false);
+    expect(isBuiltinPlayLocked()).toBe(true);
+  });
+
+  it("取值容错：大小写 / 空白 / 别名（false、0、disabled）", () => {
+    for (const raw of ["OFF", " off ", "false", "0", "disabled"]) {
+      vi.stubEnv("MUSIC_BUILTIN_PLAY", raw);
+      expect(resolveBuiltinPlayBaseline()).toBe(false);
+      expect(isBuiltinPlayLocked()).toBe(true);
+    }
+  });
+
+  it("非法取值忽略并回退默认（不锁定）", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.stubEnv("MUSIC_BUILTIN_PLAY", "maybe");
+    expect(resolveBuiltinPlayBaseline()).toBe(true);
+    expect(isBuiltinPlayLocked()).toBe(false);
+    warn.mockRestore();
+  });
+
+  it("isBuiltinPlayEnabled：显式传入生效值时直接采用", () => {
+    expect(isBuiltinPlayEnabled(false)).toBe(false);
+    expect(isBuiltinPlayEnabled(true)).toBe(true);
+    expect(isBuiltinPlayEnabled()).toBe(true); // 未配置 env → 默认开启
   });
 });

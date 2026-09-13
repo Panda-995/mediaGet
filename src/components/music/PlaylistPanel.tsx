@@ -14,6 +14,9 @@ import { sourceMetaFor, type SearchChip } from "./source-meta";
 import { EqBars } from "./eq-bars";
 
 export interface PlaylistPanelProps {
+  /** 挂载期本地恢复（播放列表快照）是否尚未落定：true 时先显示占位，避免刷新后
+   *  （SSR 首帧拿不到 localStorage）先闪一下「播放列表还是空的」再出列表 */
+  restoring: boolean;
   searching: boolean;
   searchedKw: string;
   list: SearchItem[] | null;
@@ -42,6 +45,7 @@ export interface PlaylistPanelProps {
  * 行内展示序号、播放动效、歌手 / 专辑 / 平台 / 线路信息，点击或回车播放。
  */
 export default function PlaylistPanel({
+  restoring,
   searching,
   searchedKw,
   list,
@@ -71,6 +75,18 @@ export default function PlaylistPanel({
               ? `正在聚合搜索多个音源「${searchedKw}」…`
               : `正在搜索「${searchedKw}」…`}
           </p>
+        </div>
+      </div>
+    );
+  }
+  // 恢复中优先于空态：刷新时首帧还没有本地快照（localStorage 只在客户端可读），
+  // 直接展示「播放列表还是空的」会先闪一下空文案再被真实列表顶掉
+  if (restoring) {
+    return (
+      <div className="mp-scroll">
+        <div className="mp-state">
+          <Loader2 className="mp-spin" />
+          <p>正在恢复上次的播放列表…</p>
         </div>
       </div>
     );
@@ -114,7 +130,7 @@ export default function PlaylistPanel({
         <div className="mp-colhead">
           <span className="mp-ch mp-ch-idx" />
           <span className="mp-ch mp-ch-title">歌名</span>
-          <span className="mp-ch mp-ch-artist">作者</span>
+          <span className="mp-ch mp-ch-artist">艺术家</span>
           <span className="mp-ch mp-ch-album">专辑</span>
           <span className="mp-ch mp-ch-src">平台</span>
           <span className="mp-ch mp-ch-line">线路</span>
@@ -134,6 +150,7 @@ export default function PlaylistPanel({
           const artist = artistText(item);
           const line = musicLineMeta(item.line);
           const sourceLabel = sourceMetaFor(item.source || source, sourceChips).label;
+          // 行 key 的唯一性由列表写入侧的 dedupeSearchItems 保证：同一 source:id 只会有一条
           return (
             <div
               key={`${item.source}-${item.id}`}

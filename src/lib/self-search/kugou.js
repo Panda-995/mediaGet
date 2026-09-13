@@ -54,8 +54,8 @@ export function parseKugouSearch(json) {
     seen.add(String(audioId || hash));
     items.push({
       id: String(audioId || hash),
-      // FileHash 是酷狗各类直链/音源脚本取链的标准 id（GD 无酷狗直链通道，
-      // 配置 lx 音源后由音源脚本按此 hash 同曲换链）；lyricId 同样保留 hash。
+      // FileHash 是酷狗官方直链的标准 id（GD 无酷狗直链通道，自研通道按此 hash 取链）；
+      // lyricId 同样保留 hash。
       urlId: hash,
       lyricId: hash,
       name: decodeName(item.SongName || ""),

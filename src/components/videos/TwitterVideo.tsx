@@ -187,6 +187,9 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
           url={d.url!}
           cover={d.cover}
           alt={d.title || "视频封面"}
+          title={d.title}
+          author={d.author}
+          platform="twitter"
           accent="neutral"
           inline
           parts={hasMultiVideo ? videos : undefined}

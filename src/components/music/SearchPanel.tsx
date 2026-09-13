@@ -1,11 +1,12 @@
 "use client";
 
 import type { CSSProperties, Dispatch, FormEvent, SetStateAction } from "react";
-import { AlertCircle, Link2, Loader2, Search } from "lucide-react";
+import { AlertCircle, Link2, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { SearchSourceKey } from "@/components/music/types";
-import { PlatformIcon } from "@/components/music/platform-icons";
+import { AggregateIcon, PlatformIcon } from "@/components/music/platform-icons";
 import type { SearchChip } from "./source-meta";
+import { platformBrandFor } from "./platform-brand";
 
 export interface SearchPanelProps {
   mode: "search" | "resolve";
@@ -21,7 +22,7 @@ export interface SearchPanelProps {
   setSearchError: Dispatch<SetStateAction<string>>;
   setResolveError: Dispatch<SetStateAction<string>>;
   source: SearchSourceKey;
-  /** 全部可选的搜索源 chip（内置 GD 源 + 自研直连搜索源 + 扩展源） */
+  /** 全部可选的搜索源 chip（内置 GD 源 + 自研直连搜索源） */
   sourceChips: SearchChip[];
   /** 当前搜索源的展示名（如“我的网易云源”），用于搜索框占位 */
   sourceLabel: string;
@@ -31,6 +32,12 @@ export interface SearchPanelProps {
   runSearch: (arg?: FormEvent<HTMLFormElement> | string) => void;
   runResolve: (arg?: FormEvent<HTMLFormElement>) => void;
   switchSource: (next: SearchSourceKey) => void;
+  /** 最近搜索关键词（本机缓存，最新在前）；空数组时整行不展示 */
+  history: string[];
+  /** 删除一条搜索历史 */
+  onRemoveHistory: (kw: string) => void;
+  /** 清空全部搜索历史 */
+  onClearHistory: () => void;
 }
 
 /**
@@ -58,6 +65,9 @@ export default function SearchPanel({
   runSearch,
   runResolve,
   switchSource,
+  history,
+  onRemoveHistory,
+  onClearHistory,
 }: SearchPanelProps) {
   const tags = ["周杰伦", "林俊杰", "陈奕迅", "Beyond", "稻香"];
   const searchMode = mode === "search";
@@ -124,7 +134,8 @@ export default function SearchPanel({
             </form>
 
             <div className="mp-chiprow">
-              {/* 聚合搜索伪 chip：一次搜全部音源（独立于单源 chip，不写入 source 状态） */}
+              {/* 聚合搜索伪 chip：一次搜全部音源（独立于单源 chip，不写入 source 状态）；
+                  图标为 /logos/aggregate.svg 的「多源汇聚」图示，与平台 logo 同为 14px */}
               <button
                 type="button"
                 aria-pressed={aggActive}
@@ -132,35 +143,35 @@ export default function SearchPanel({
                 className={cn("mp-src-chip", "mp-src-chip-agg", aggActive && "is-active")}
                 style={{ "--sc": "var(--mp-primary)" } as CSSProperties}
                 onClick={() => setAggActive(!aggActive)}>
-                <span className="dot" aria-hidden="true" />
+                <AggregateIcon />
                 聚合搜索
               </button>
               {sourceChips.map((s) => {
                 // 聚合模式下列表来源混合，source 仅是“退出聚合后的回退值”，不视为当前选中
                 const active = !aggActive && source === s.key;
+                // 有品牌 SVG 的平台（含自研直连源 kugou / migu / tencent）渲染 logo，
+                // 无品牌的退回品牌色圆点 —— 以 brand 数据为准，不按通道硬编码
+                const hasLogo = Boolean(platformBrandFor(s.key).logo);
                 return (
                   <button
                     key={s.key}
                     type="button"
                     onClick={() => switchSource(s.key)}
                     title={
-                      s.ext
-                        ? `洛雪扩展音源 · ${s.label}`
-                        : s.self
-                          ? `自研直连搜索 · ${s.label}（站点直连音源，不经 GD 上游）`
-                          : `切到 ${s.label}`
+                      s.self
+                        ? `自研直连搜索 · ${s.label}（站点直连音源，不经 GD 上游）`
+                        : `切到 ${s.label}`
                     }
                     className={cn(
                       "mp-src-chip",
                       active && "is-active",
-                      s.ext && "mp-src-chip-ext",
                       s.self && "mp-src-chip-self"
                     )}
                     style={{ "--sc": s.color } as CSSProperties}>
-                    {s.ext || s.self ? (
-                      <span className="dot" aria-hidden="true" />
-                    ) : (
+                    {hasLogo ? (
                       <PlatformIcon source={s.key} />
+                    ) : (
+                      <span className="dot" aria-hidden="true" />
                     )}
                     {s.label}
                   </button>
@@ -169,17 +180,52 @@ export default function SearchPanel({
             </div>
 
             {!searching && (
-              <div className="mp-tags">
-                {tags.map((tag) => (
-                  <button
-                    key={tag}
-                    type="button"
-                    className="mp-tag"
-                    onClick={() => runSearch(tag)}>
-                    {tag}
-                  </button>
-                ))}
-              </div>
+              <>
+                {/* 最近搜索（本机缓存，见 search-history.ts）：点词回填重搜、单个可删、行尾可清空。
+                    与热门标签同处搜索框之下，故并进同一个 !searching 分支 */}
+                {history.length > 0 && (
+                  <div className="mp-hist">
+                    <span className="mp-hist-cap">最近搜索</span>
+                    {history.map((kw) => (
+                      <span key={kw} className="mp-hist-chip">
+                        <button
+                          type="button"
+                          className="mp-hist-kw"
+                          title={`再次搜索「${kw}」`}
+                          onClick={() => runSearch(kw)}>
+                          {kw}
+                        </button>
+                        <button
+                          type="button"
+                          className="mp-hist-del"
+                          aria-label={`删除历史记录「${kw}」`}
+                          title="删除这条历史"
+                          onClick={() => onRemoveHistory(kw)}>
+                          <X />
+                        </button>
+                      </span>
+                    ))}
+                    <button
+                      type="button"
+                      className="mp-hist-clear"
+                      onClick={onClearHistory}>
+                      清空
+                    </button>
+                  </div>
+                )}
+
+                <div className="mp-tags">
+                  {tags.map((tag) => (
+                    <button
+                      key={tag}
+                      type="button"
+                      className="mp-tag"
+                      onClick={() => runSearch(tag)}>
+                      {tag}
+                    </button>
+                  ))}
+                </div>
+              </>
             )}
 
             {searchError && (

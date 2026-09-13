@@ -14,9 +14,7 @@
  *  MUSIC_PLATFORM_PLAY，默认值见 src/lib/music-platform-flags.js）：tencent（QQ音乐）
  *  默认处于停用态（可播直链无稳定来源），但类型表与注册表始终完整保留实现，部署侧
  *  放开开关即恢复，无需改代码。前端 chips / 跨源候选等按 /api/music/caps 下发的生效
- *  开关过滤（music-caps.ts），静态表为「完整平台全集」。
- *  配置洛雪(lx-music)生态音源脚本后，会额外出现脚本声明的扩展源 key（如 qsvip / qdy），
- *  因此保留内置字面量提示的同时允许任意字符串。 */
+ *  开关过滤（music-caps.ts），静态表为「完整平台全集」。 */
 export type SearchSourceKey =
   | "netease"
   | "tencent"
@@ -42,15 +40,14 @@ export const SEARCH_SOURCES: SearchSource[] = [
  * 内置自研直连搜索源 chips 全集（服务端直连各音源搜索接口取回，不经 GD 上游）。
  * netease / kuwo 不做独立 chips：搜索在 music-client 里按「自研为主 + GD 引擎兜底」
  * 双通道处理（netease 直链仍经 GD 主通道服务）。
- * ⚙️ 这是「完整平台全集」，含默认停用的 tencent（QQ音乐）——是否出现在搜索面板 /
+ * ⚙️ 这是「完整平台全集」，含 tencent（QQ音乐）——是否出现在搜索面板 /
  * 能否被搜索，由平台引擎开关（/api/music/caps 下发的 MUSIC_PLATFORM_SEARCH）过滤，
  * 见 music-caps.ts 与 src/lib/music-platform-flags.js。静态恢复即「平台全集恢复」，
  * 开关关闭 = UI 不展示 + 后端拒绝，无需改动本表。
  * - tencent / kuwo / netease 的自研搜索结果可复用既有 GD 直链 / 歌词 / 封面通道；
  * - kugou 已内置官方免费试听直链（自研 /api/music/self?action=url，免费档 128k mp3；
  *   VIP/付费曲取链失败，见 failType=vip-only）；
- * - migu 无内置直链引擎：搜索结果默认只识别展示；配置对应 lx 音源脚本兜底后
- *   （sources 目录 urlFallbacks，见 music-client requestPlayDirect）点播会自动改由音源脚本取链。
+ * - migu 无内置直链引擎：搜索结果默认只识别展示，点播时按 GD 直链通道尝试取链。
  * 搜索源映射：tx→tencent、kg→kugou、mg→migu。
  */
 export const SELF_SEARCH_SOURCES: SearchSource[] = [

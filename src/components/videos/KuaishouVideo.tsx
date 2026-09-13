@@ -140,6 +140,9 @@ export default function KuaishouVideo({ data }: KuaishouVideoProps) {
           url={kuaishouData.url}
           cover={kuaishouData.cover}
           alt={kuaishouData.title || "视频封面"}
+          title={kuaishouData.title}
+          author={kuaishouData.author}
+          platform="kuaishou"
           accent="orange"
           tall
           inline

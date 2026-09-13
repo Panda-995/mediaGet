@@ -212,6 +212,9 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
           url={weiboData.url!}
           cover={weiboData.cover}
           alt={weiboData.title || "视频封面"}
+          title={weiboData.title}
+          author={weiboData.author}
+          platform="weibo"
           accent="red"
           inline
           parts={hasMultiVideo ? videos : undefined}

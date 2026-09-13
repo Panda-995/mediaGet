@@ -56,9 +56,10 @@ function normalizePage(raw) {
  * /api/music 的 action=search 对齐统一契约 { code, msg, data }，items 为 SearchItem；其中能随
  * 搜索响应直接携带的封面写入 picUrlDirect（不做的封面二次换取，见 lib/self-search/index.js）。
  *
- * action=url：自研直连平台的「搜索产物 → 播放直链」通道（相当于 GD/lx 在自研源上的内置换链）。
+ * action=url：自研直连平台的「搜索产物 → 播放直链」通道（相当于 GD 在自研源上的内置换链）。
  * 当前仅 kugou（官方 getSongInfo 免费档 128k mp3；VIP/付费曲返回 404+failType=vip-only）。
- * 直链带 CDN 时效不缓存；受 MUSIC_PLATFORM_PLAY 开关约束，关闭时 400。
+ * 直链带 CDN 时效不缓存；受内置播放引擎总开关（MUSIC_BUILTIN_PLAY / 音乐控制台）与
+ * MUSIC_PLATFORM_PLAY 开关约束，关闭时 400（action=search 不受两者影响）。
  *
  * 进程内存 5 分钟缓存（search 成功才写）、IP 级限流与黑名单拦截与主接口一致。
  */
@@ -96,6 +97,8 @@ export async function GET(request) {
   const effectiveFlags = await loadEffectiveMusicFlags();
   const effSearch = effectiveFlags.flags.search;
   const effPlay = effectiveFlags.flags.play;
+  // 内置播放引擎总开关（自研直连取直链通道的总闸；action=search 搜索不受影响）
+  const builtinPlayOn = effectiveFlags.builtinPlay.enabled !== false;
 
   // —— 参数读取与校验 ——
   const action = (searchParams.get("action") || "search").trim().toLowerCase();
@@ -119,10 +122,19 @@ export async function GET(request) {
         {
           code: 400,
           msg: source
-            ? `自研直连取链暂未支持 source: ${source}（当前仅支持 kugou，其余平台走 GD/lx 直链）`
+            ? `自研直连取链暂未支持 source: ${source}（当前仅支持 kugou，其余平台走 GD 直链）`
             : "source 为空：请指定要取直链的音乐平台",
           supportedSources: [{ key: "kugou", label: "酷狗音乐" }],
           usage: "/api/music/self?action=url&source=kugou&hash=<FileHash>",
+        },
+        400
+      );
+    }
+    if (!builtinPlayOn) {
+      return send(
+        {
+          code: 400,
+          msg: "内置播放引擎已停用：本站当前不提供自研直连取直链通道（可在音乐控制台或 MUSIC_BUILTIN_PLAY 开启）",
         },
         400
       );
