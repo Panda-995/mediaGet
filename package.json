@@ -9,6 +9,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
+    "dev:lan": "next dev --turbopack -H 0.0.0.0",
     "build": "next build",
     "start": "next start",
     "lint": "next lint --dir src --dir tests",

@@ -33,6 +33,10 @@ const withPWA = withPWAInit({
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // 真机联调（iOS Safari 经局域网 IP 直连 dev server）：dev 资源与 RSC 端点默认只
+  // 放行 localhost，来自局域网 IP 的请求会被挡下，表现为「页面能开但取直链接口挂」。
+  // 只按 hostname 匹配（无协议、无端口），`*` 匹配一个 label。仅 dev 生效。
+  allowedDevOrigins: ["192.168.*.*", "10.*.*.*"],
   // standalone：构建时裁剪出最小运行时依赖（仅生产所需 node_modules 子集），
   // 配合多阶段 Dockerfile，让生产镜像不含 devDependencies，体积更小、攻击面更低。
   output: "standalone",
