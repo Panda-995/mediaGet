@@ -9,7 +9,7 @@ import {
   reportTrackFailure,
   resetMusicRemoteCacheForTest,
 } from "@/lib/music-remote-cache";
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 
 const track = (o: Partial<SearchItem> = {}): SearchItem => ({
   id: "id-1",

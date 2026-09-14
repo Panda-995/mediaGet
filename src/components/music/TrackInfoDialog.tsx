@@ -9,11 +9,11 @@ import {
   formatSize,
   formatTime,
   type SearchSourceKey,
-} from "@/components/music/types";
+} from "@/types/music";
 import {
   type DirectData,
   type SearchItem,
-} from "@/lib/music-client";
+} from "@/lib/client/music-client";
 import { PlatformIcon } from "@/components/music/platform-icons";
 import { sourceMetaFor, type SearchChip } from "./source-meta";
 import type { LyricLine } from "./lyric-utils";

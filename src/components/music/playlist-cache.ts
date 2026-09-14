@@ -1,4 +1,4 @@
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 
 /** 播放列表会话快照（localStorage 单份 JSON）：最近一次搜索结果（含已翻页累积）。
  * 目的：刷新不摧毁列表；同一关键词 + 来源再次搜索，若首页结果与缓存头部一致，

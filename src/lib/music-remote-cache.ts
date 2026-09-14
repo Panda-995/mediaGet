@@ -17,7 +17,7 @@
  * 注意本模块只在浏览器侧生效（SSR 下所有函数为空操作），且用户能关掉总开关时
  * 调用方应自行判断——这里不做业务判断，只做「说什么就报什么」。
  */
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 import { songIdentityKey } from "@/lib/music-match";
 
 /** 上报端点 */

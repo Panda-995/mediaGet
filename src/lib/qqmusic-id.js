@@ -8,6 +8,7 @@
  * 移出路由模块，由 platformRoutes 按平台映射动态加载并挂载同名函数。
  */
 
+import { UA_CHROME_WIN126 } from "@/lib/http";
 import { logger } from "@/lib/api-utils";
 import { zzcSign } from "@/lib/qqmusic-sign";
 import {
@@ -31,7 +32,7 @@ const QQMUSIC_COOKIE = process.env.QQMUSIC_COOKIE || "";
 
 const REQUEST_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    UA_CHROME_WIN126,
   Referer: "https://y.qq.com/",
   Origin: "https://y.qq.com",
 };

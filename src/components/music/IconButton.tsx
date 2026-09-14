@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 export interface IconButtonProps {
@@ -10,7 +10,11 @@ export interface IconButtonProps {
   /** aria-pressed（切换类按钮，如静音） */
   ariaPressed?: boolean;
   disabled?: boolean;
-  onClick?: () => void;
+  /**
+   * 点击回调。**接收原生事件**——嵌在可点击容器里（如播放列表行本身是个大按钮）的图标按钮
+   * 需要 `e.stopPropagation()` 阻止冒泡触发外层动作；不接参数的 `() => void` 写法同样兼容。
+   */
+  onClick?: (e: MouseEvent<HTMLButtonElement>) => void;
   /** 提供 href 时渲染为 <a>（下载 / 外链类图标按钮） */
   href?: string;
   /** 下载文件名（渲染为 <a> 时生效；纯布尔 true = 同名下载） */

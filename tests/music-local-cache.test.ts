@@ -54,7 +54,7 @@ import {
   readSearchHistory,
   removeSearchHistory,
 } from "@/components/music/search-history";
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 import type { CoverPalette } from "@/lib/cover-palette";
 
 /** 安装内存版 localStorage（node 环境没有），返回底层 Map 便于断言 */

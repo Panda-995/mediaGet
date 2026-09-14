@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { ApiResponse, ParseData } from "@/types/api";
+import { formatCountLoose } from "@/lib/format";
+import { scrollToElement } from "@/lib/dom";
 import VideoPosterCard from "./VideoPosterCard";
 import ParseInfoPanel from "./ParseInfoPanel";
 import CaptionBox from "./CaptionBox";
@@ -55,24 +57,6 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
   const hasImages = images.length > 0;
   const isText = !hasVideo && !hasImages;
 
-  // 计数解析：兼容数字 / 数字字符串 / 中文单位字符串（"32.1万"、"1.2亿"）
-  const parseCount = (v: unknown): number => {
-    if (typeof v === "number") return Number.isFinite(v) ? v : Number.NaN;
-    if (typeof v === "string") {
-      const w = /^([\d.]+)\s*万$/.exec(v.trim());
-      if (w) return parseFloat(w[1]) * 10000;
-      const y = /^([\d.]+)\s*亿$/.exec(v.trim());
-      if (y) return parseFloat(y[1]) * 100000000;
-      return parseFloat(v);
-    }
-    return Number.NaN;
-  };
-
-  // 数字缩写：>1万 → x.x万 / xx万，其余千分位；无效或 ≤0 返回 undefined
-  const formatCount = (n: number) =>
-    n >= 10000
-      ? `${(n / 10000).toFixed(n >= 1000000 ? 0 : 1)}万`
-      : n.toLocaleString("zh-CN");
 
   // 博主主页公开信息徽标：关注 / 粉丝（微博无「获赞」公开字段，缺失自动隐藏）
   const authorBadges: { label: string; value?: number }[] = [
@@ -96,11 +80,8 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
 
   // 播放卡「下载」按钮：多P时滚动定位到下方「下载选项」列表中对应分P的下载行，
   // 而不是列表顶部——用户正在看/播放第几P，就跳到第几P的下载按钮
-  const scrollToDownload = (index: number) => {
-    document
-      .getElementById(`weibo-download-${index}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
+  const scrollToDownload = (index: number) =>
+    scrollToElement(`weibo-download-${index}`);
 
   // 一键下载全部分P：逐个触发视频代理下载（同源 URL + Content-Disposition 强制保存），
   // 间隔 600ms 避免浏览器把连续下载当批量行为拦截
@@ -182,16 +163,14 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
               {/* 关注 / 粉丝（纯文本，左边缘与上方文字严格对齐） */}
               <div className="mt-0.5 flex flex-wrap gap-x-3 gap-y-1 text-[13px]">
                 {authorBadges.map((badge) => {
-                  const n = parseCount(badge.value);
-                  if (!Number.isFinite(n) || n <= 0) return null;
+                  const text = formatCountLoose(badge.value);
+                  if (!text) return null;
                   return (
                     <span
                       key={badge.label}
                       className="inline-flex items-center gap-1">
                       <span className="text-muted">{badge.label}</span>
-                      <span className="font-semibold text-primary">
-                        {formatCount(n)}
-                      </span>
+                      <span className="font-semibold text-primary">{text}</span>
                     </span>
                   );
                 })}

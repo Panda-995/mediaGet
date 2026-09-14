@@ -6,6 +6,7 @@
  * 搜索结果不含封面字段（酷我封面需按 rid 二次换取，遵循「封面不强求」约定不做）。
  */
 import { SelfSearchError, SELF_SEARCH_FAILURE } from "./errors";
+import { searchWithRetry } from "./retry";
 import { decodeName, fetchJson } from "./request";
 
 export function buildKuwoSearchUrl(keyword, page, limit) {
@@ -56,21 +57,8 @@ export function parseKuwoSearch(json) {
 
 /** 酷我搜索编排：最多重试 2 次，网络/结构异常统一归类 sources-down */
 export async function searchKuwo(keyword, page, limit) {
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const json = await fetchJson(buildKuwoSearchUrl(keyword, page, limit));
-      return parseKuwoSearch(json);
-    } catch (error) {
-      lastError = error;
-      if (error instanceof SelfSearchError) {
-        if (attempt === 1) throw error;
-        continue;
-      }
-    }
-  }
-  throw new SelfSearchError(
-    SELF_SEARCH_FAILURE.SOURCES_DOWN,
-    `酷我搜索暂不可用${lastError ? `：${lastError.message}` : ""}`
-  );
+  return searchWithRetry(async () => {
+    const json = await fetchJson(buildKuwoSearchUrl(keyword, page, limit));
+    return parseKuwoSearch(json);
+  }, "酷我搜索暂不可用");
 }

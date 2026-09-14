@@ -1,15 +1,17 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { DEFAULT_MOBILE_UA } from "@/lib/default-mobile-ua";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 async function parseVideoId(videoId) {
   const reqUrl = `https://v.6.cn/coop/mobile/index.php?padapi=minivideo-watchVideo.php&av=3.0&encpass=&logiuid=&isnew=1&from=0&vid=${videoId}`;
-  const res = await fetch(reqUrl, {
+  const res = await fetchWithTimeout(reqUrl, {
     headers: {
       Referer: `https://m.6.cn/v/${videoId}`,
       "User-Agent": DEFAULT_MOBILE_UA,
     },
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   const json = await res.json();
   const data = json?.content;

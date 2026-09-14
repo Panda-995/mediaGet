@@ -1,0 +1,222 @@
+/* music.css 片段 1/8 —— 基础层：.mp-app 作用域、全页共享令牌（强调色 / 收藏红心 / 播放条高度 / 缓动）、
+   自定义音质下拉与轻提示 toast。
+   本目录由 src/app/music/music.css 以 @import 按序引入：片段顺序即层叠顺序（同特异性下后者覆盖前者），
+   不得随意调换。新增样式请按其所属分区放入对应片段。 */
+
+.mp-app {
+  /* 作用域内把强调色改成 YesPlayMusic 的蓝，亮暗主题各自适配 */
+  --accent: #335eea;
+  --mp-primary: #335eea;
+  --mp-primary-bg: #eaeffd;
+  --mp-soft: rgba(209, 209, 214, 0.28);
+  --mp-hover: rgba(0, 0, 0, 0.05);
+  --mp-row-hover: rgba(0, 0, 0, 0.045);
+  --mp-divider: rgba(0, 0, 0, 0.07);
+  --mp-line: rgba(0, 0, 0, 0.14);
+  --mp-muted: rgba(0, 0, 0, 0.42);
+  --mp-eq: #335eea;
+  /* 收藏红心：单独一颗令牌而不是复用 --mp-primary / --error。
+     前者是「当前选中」，后者是「危险操作」，而收藏是第三种语义（曲目状态），
+     三处落点（结果行 / 播放列表行 / 底栏、正在播放卡片）共用这一个色值。 */
+  --mp-fav-on: #f43f5e;
+  /* 底部播放条高度（1px 上边框 + 3px 进度条 + 58px 主行）与浮层让位间隙：
+     既决定播放条自身高度（收起 = 0，见 .is-bar-collapsed），也决定轻提示 /
+     换源进行态贴在它正上方的高度；移动端播放条更高，见文件末尾媒体查询 */
+  --mp-bar-h: 62px;
+  --mp-float-gap: 12px;
+  /* 播放条收起 / 唤起与浮层让位的统一缓动（抽屉式，起手略快、收尾缓和） */
+  --mp-bar-ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+  height: calc(100vh - 57px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  background:
+    radial-gradient(1100px 520px at 85% -12%, color-mix(in srgb, var(--accent) 7%, transparent), transparent 62%),
+    radial-gradient(900px 480px at -10% 108%, color-mix(in srgb, var(--accent) 5%, transparent), transparent 60%),
+    var(--background);
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.dark .mp-app {
+  --accent: #6f9bff;
+  --mp-primary: #6f9bff;
+  --mp-primary-bg: rgba(111, 155, 255, 0.18);
+  --mp-soft: rgba(255, 255, 255, 0.09);
+  --mp-hover: rgba(255, 255, 255, 0.09);
+  --mp-row-hover: rgba(255, 255, 255, 0.06);
+  --mp-divider: rgba(255, 255, 255, 0.08);
+  --mp-line: rgba(255, 255, 255, 0.18);
+  --mp-muted: rgba(255, 255, 255, 0.48);
+  --mp-eq: #ffffff;
+  /* 暗色下提亮一档（同 --mp-primary 的处理），否则红心在深底上发闷 */
+  --mp-fav-on: #fb7185;
+}
+
+/* 底部播放条已收起（无在播内容且静默期已过，或用户未唤起）：
+   条高归零 → 主体铺满，上方浮层（.mp-toast / .mp-alt-progress）跟着贴底，
+   不再悬在空出来的位置上；唤起入口只剩底部把手 .mp-bar-handle */
+.mp-app.is-bar-collapsed {
+  --mp-bar-h: 0px;
+}
+
+/* ---------- 页内不再有顶栏：logo/标题在全局顶部导航；「发现歌曲/播放列表」
+   切换器在内容区顶部功能区（.mp-tools，MusicViewSeg） ---------- */
+
+/* ---------- 自定义音质下拉（底部播放条）与轻提示 toast ---------- */
+.mp-brp { position: relative; margin-left: 8px; }
+.mp-brp-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 9px;
+  border: 1px solid var(--border-subtle);
+  background: var(--glass-2);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.mp-brp-trigger:hover:not(:disabled) {
+  border-color: var(--border-medium);
+  color: var(--text-primary);
+}
+.mp-brp-trigger:disabled { opacity: 0.45; cursor: not-allowed; }
+.mp-brp.is-open .mp-brp-trigger {
+  border-color: var(--mp-primary);
+  background: var(--mp-primary-bg);
+  color: var(--mp-primary);
+}
+.mp-brp-trigger svg { width: 13px; height: 13px; flex: none; }
+.mp-brp-caret { color: var(--text-muted); transition: transform 0.18s; }
+.mp-brp.is-open .mp-brp-caret { transform: rotate(180deg); }
+.mp-brp-trigger .mp-spin { width: 13px; height: 13px; color: var(--text-muted); }
+.mp-brp-label { white-space: nowrap; }
+
+.mp-brp-pop {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 8px);
+  z-index: 40;
+  min-width: 132px;
+  width: max-content;
+  padding: 5px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--background) 86%, transparent);
+  backdrop-filter: blur(20px) saturate(160%);
+  -webkit-backdrop-filter: blur(20px) saturate(160%);
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.2);
+  animation: mp-brp-in 0.16s ease-out;
+}
+@keyframes mp-brp-in {
+  from { opacity: 0; transform: translateY(5px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.mp-brp-group + .mp-brp-group {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--mp-divider);
+}
+.mp-brp-glabel {
+  padding: 2px 7px 3px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.mp-brp-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  padding: 5px 7px;
+  white-space: nowrap;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  font-size: 12.5px;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.12s;
+}
+.mp-brp-item:hover { background: var(--mp-hover); }
+.mp-brp-item.is-active { color: var(--mp-primary); font-weight: 600; }
+.mp-brp-item svg { width: 14px; height: 14px; flex: none; color: var(--mp-primary); }
+.mp-brp-item-main { display: inline-flex; align-items: center; gap: 6px; min-width: 0; }
+.mp-brp-rec {
+  font-style: normal;
+  font-size: 9.5px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--mp-primary);
+  color: #fff;
+}
+
+/* 播放条上方轻提示：让位高度跟随播放条（收起时 --mp-bar-h 归零 → 提示自然贴底） */
+.mp-toast {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mp-bar-h) + var(--mp-float-gap));
+  transform: translateX(-50%);
+  transition: bottom 0.3s var(--mp-bar-ease);
+  z-index: 60;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: min(86vw, 440px);
+  padding: 7px 13px;
+  border-radius: 999px;
+  background: rgba(24, 26, 34, 0.92);
+  color: #fff;
+  font-size: 12.5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: mp-toast-in 0.22s ease-out;
+}
+.mp-toast svg { width: 14px; height: 14px; flex: none; }
+.mp-toast.is-err { background: rgba(196, 48, 64, 0.95); }
+@keyframes mp-toast-in {
+  from { opacity: 0; transform: translate(-50%, 8px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* 播放失败 → 自动换源进行态（resolve / play 双失败闭环进行中） */
+.mp-alt-progress {
+  position: absolute;
+  left: 50%;
+  bottom: calc(var(--mp-bar-h) + var(--mp-float-gap));
+  transform: translateX(-50%);
+  transition: bottom 0.3s var(--mp-bar-ease);
+  z-index: 61;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  max-width: min(86vw, 480px);
+  padding: 7px 14px;
+  border-radius: 999px;
+  background: rgba(24, 26, 34, 0.92);
+  border: 1px solid rgba(255, 196, 0, 0.55);
+  color: #fff;
+  font-size: 12.5px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  pointer-events: none;
+  animation: mp-toast-in 0.22s ease-out;
+}
+.mp-alt-progress svg {
+  width: 14px;
+  height: 14px;
+  flex: none;
+  color: #ffc400;
+}
+

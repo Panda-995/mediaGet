@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { ApiResponse, ParseData } from "@/types/api";
+import { formatCount } from "@/lib/format";
+import { scrollToElement } from "@/lib/dom";
 import VideoPosterCard from "./VideoPosterCard";
 import ParseInfoPanel from "./ParseInfoPanel";
 import CaptionBox from "./CaptionBox";
@@ -52,11 +54,6 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
   const hasVideo = !!d.url && d.type !== "image";
   const hasImages = images.length > 0;
 
-  // 数字缩写：>1万 → x.x万 / xx万，其余千分位（对齐小红书/微博博主卡）
-  const formatCount = (n: number) =>
-    n >= 10000
-      ? `${(n / 10000).toFixed(n >= 1000000 ? 0 : 1)}万`
-      : n.toLocaleString("zh-CN");
 
   // 下载文件名：twitter-作者-标题.mp4（走代理强制保存；标题 30 字，净化后拼接）
   const downloadName = `twitter-${sanitizeFilename(
@@ -71,11 +68,8 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
     }-${sanitizeFilename(d.title || "video", 30)}.mp4`;
 
   // 播放卡「下载」按钮：多P时滚动定位到下方「下载选项」列表中对应分P的下载行
-  const scrollToDownload = (index: number) => {
-    document
-      .getElementById(`twitter-download-${index}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
+  const scrollToDownload = (index: number) =>
+    scrollToElement(`twitter-download-${index}`);
 
   // 一键下载全部分P：逐个触发视频代理下载（同源 URL + Content-Disposition 强制保存），
   // 间隔 600ms 避免浏览器把连续下载当批量行为拦截

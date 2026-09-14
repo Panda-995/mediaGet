@@ -3,7 +3,7 @@
 import type { CSSProperties, Dispatch, FormEvent, SetStateAction } from "react";
 import { AlertCircle, Link2, Loader2, Search, X } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { SearchSourceKey } from "@/components/music/types";
+import type { SearchSourceKey } from "@/types/music";
 import { AggregateIcon, PlatformIcon } from "@/components/music/platform-icons";
 import type { SearchChip } from "./source-meta";
 import { platformBrandFor } from "./platform-brand";

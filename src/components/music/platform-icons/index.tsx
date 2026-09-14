@@ -1,4 +1,4 @@
-import type { SearchSourceKey } from "@/components/music/types";
+import type { SearchSourceKey } from "@/types/music";
 import { AGGREGATE_LOGO, PLATFORM_LOGOS } from "@/components/music/platform-brand";
 
 /**

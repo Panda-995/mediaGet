@@ -1,6 +1,7 @@
 // 共享的快手解析核心逻辑（供 Next 路由与 Cloudflare Workers 复用）
 
 // Edge/Workers 环境不启用 DOM 解析，直接使用字符串/正则方案
+import { UA_IOS_SAFARI_16_6 } from "@/lib/http";
 async function initDOMParser() {
   return null;
 }
@@ -18,7 +19,7 @@ class KuaishouParser {
   constructor() {
     this.headers = {
       "User-Agent":
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+        UA_IOS_SAFARI_16_6,
       Accept:
         "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
       "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",

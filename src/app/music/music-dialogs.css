@@ -1,0 +1,483 @@
+/* music.css 片段 6/8 —— 弹层与浮出面板：歌曲详情弹窗、发现歌曲页「查找方式」二级切换
+   （关键词搜索 / 粘贴链接解析）、播放失败后的同曲其他版本选版面板、内容区右上角设置齿轮。
+   片段顺序即层叠顺序，不得随意调换（见 music-base.css 头部说明）。 */
+
+/* ============================================================
+   歌曲详情弹窗：播放列表行最右的 info 按钮触发。
+   展示歌名 / 歌手 / 专辑 / 来源与接口元数据（曲目 ID 等）。
+   ============================================================ */
+.mp-info-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 75;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(5px) saturate(120%);
+  -webkit-backdrop-filter: blur(5px) saturate(120%);
+  animation: mp-info-fade 0.16s ease-out;
+}
+.dark .mp-info-mask { background: rgba(0, 0, 0, 0.55); }
+@keyframes mp-info-fade {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.mp-info-card {
+  width: min(440px, 100%);
+  max-height: min(760px, calc(100vh - 48px));
+  overflow-y: auto;
+  padding: 22px 24px 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.3);
+  animation: mp-info-pop 0.2s cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+@keyframes mp-info-pop {
+  from { opacity: 0; transform: translateY(10px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.mp-info-headtext {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.mp-info-caption {
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+  color: var(--text-primary);
+}
+.mp-info-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mp-info-close:hover { color: var(--text-primary); background: var(--mp-hover); }
+.mp-info-close:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-info-close svg { width: 15px; height: 15px; }
+
+/* 详情字段的动态值形态 */
+.mp-info-pending {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.mp-info-dim { color: var(--text-muted); font-size: 12px; }
+.mp-info-strong {
+  color: var(--mp-primary);
+  font-weight: 600;
+}
+.mp-info-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+.mp-info-loading .mp-spin { width: 12px; height: 12px; }
+.mp-info-link {
+  display: inline-flex;
+  align-items: center;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--mp-primary);
+  text-decoration: none;
+  cursor: pointer;
+}
+.mp-info-link:hover { text-decoration: underline; }
+.mp-info-link:focus-visible {
+  outline: 2px solid var(--mp-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.mp-info-songrow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  min-width: 0;
+}
+.mp-info-url {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  color: var(--mp-primary);
+  text-decoration: none;
+  overflow-wrap: normal;
+  word-break: normal;
+}
+.mp-info-url:hover { text-decoration: underline; }
+/* 歌词链接：抓取到的 LRC 文件下载超链接（点击整行即下载 .lrc） */
+.mp-info-lrc { gap: 6px; max-width: 100%; }
+.mp-info-lrc svg { flex: none; }
+.mp-info-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: none;
+  border-radius: 7px;
+  background: var(--mp-soft);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mp-info-copy:hover { color: var(--mp-primary); background: var(--mp-hover); }
+.mp-info-copy:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-info-copy svg { width: 13px; height: 13px; }
+
+.mp-info-fields {
+  display: flex;
+  flex-direction: column;
+  margin-top: 16px;
+  border-top: 1px solid var(--mp-divider);
+}
+.mp-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--mp-divider);
+  font-size: 13px;
+}
+.mp-info-k {
+  flex: none;
+  width: 66px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.mp-info-v {
+  min-width: 0;
+  flex: 1;
+  color: var(--text-primary);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+.mp-info-v code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 11.5px;
+  color: var(--text-secondary);
+  background: var(--mp-soft);
+  padding: 2px 7px;
+  border-radius: 6px;
+  user-select: text;
+}
+
+.mp-info-foot {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+.mp-info-copybtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  flex: 1;
+  height: 38px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  background: var(--mp-primary);
+  color: #fff;
+  transition: background 0.15s, filter 0.15s, transform 0.15s;
+}
+.mp-info-copybtn:hover { filter: brightness(1.08); }
+.mp-info-copybtn:active { transform: scale(0.98); }
+.mp-info-copybtn:focus-visible {
+  outline: 2px solid var(--mp-primary);
+  outline-offset: 2px;
+}
+.mp-info-copybtn svg { width: 14px; height: 14px; }
+
+/* ============================================================
+   发现歌曲页「查找方式」二级切换：关键词搜索 / 粘贴链接解析
+   ============================================================ */
+.mp-mode-seg {
+  display: inline-flex;
+  gap: 4px;
+  margin-bottom: 4px;
+  padding: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--glass-2);
+}
+.mp-mode-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mp-mode-btn svg { width: 15px; height: 15px; }
+.mp-mode-btn:hover { color: var(--text-primary); }
+.mp-mode-btn.is-active {
+  background: var(--mp-primary);
+  color: #fff;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--mp-primary) 35%, transparent);
+}
+.mp-mode-btn:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 2px; }
+.mp-link-form input::placeholder { color: var(--text-muted); }
+.mp-resolve-tip {
+  max-width: 560px;
+  margin: 2px auto 0;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--text-muted);
+}
+.mp-resolve-tip strong { color: var(--mp-primary); font-weight: 600; }
+.mp-resolve-tip .dim { opacity: 0.82; }
+
+/* ============================================================
+   播放失败 → 同曲其他版本（人工选版面板）
+   自动换源收尾仍失败且队列里有未尝试过的同曲候选时弹出：
+   每一行 = 一个队列内版本（来源徽标 + 歌名 + 歌手 + 专辑），
+   整行可点即「就播这版」；非高置信（专辑不一致）候选带提示注释。
+   ============================================================ */
+.mp-alt-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 92;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(10, 12, 18, 0.46);
+  backdrop-filter: blur(6px) saturate(120%);
+  -webkit-backdrop-filter: blur(6px) saturate(120%);
+  animation: mp-info-fade 0.16s ease-out;
+}
+.mp-alt-card {
+  display: flex;
+  flex-direction: column;
+  width: min(560px, 100%);
+  max-height: min(640px, calc(100vh - 48px));
+  padding: 18px 18px 12px;
+  overflow: hidden;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--background) 96%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.3);
+  animation: mp-alt-pop 0.18s ease-out;
+}
+@keyframes mp-alt-pop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+.mp-alt-head {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.mp-alt-headtext { flex: 1; min-width: 0; }
+.mp-alt-caption {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14.5px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.mp-alt-caption svg {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: #f59e0b;
+}
+.mp-alt-reason {
+  margin-top: 3px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+.mp-alt-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.mp-alt-close:hover { background: var(--mp-hover); color: var(--text-primary); }
+.mp-alt-close:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-alt-close svg { width: 15px; height: 15px; }
+.mp-alt-list {
+  margin: 14px -6px 0;
+  padding: 0 6px 2px;
+  list-style: none;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.mp-alt-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 8px 10px;
+  border: none;
+  border-radius: 12px;
+  background: transparent;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s;
+}
+.mp-alt-item:hover { background: var(--mp-hover); }
+.mp-alt-item:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: -2px; }
+.mp-alt-src {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 110px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  color: var(--text-secondary);
+  font-size: 11.5px;
+  white-space: nowrap;
+}
+.mp-alt-src svg { flex: none; width: 13px; height: 13px; }
+/* “跨源现搜”候选徽标：区分于队列内（来源 A）候选，帮助用户理解条目来自现搜 */
+.mp-alt-src .mp-alt-tag {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--mp-primary) 14%, transparent);
+  color: var(--mp-primary);
+  font-size: 10px;
+  line-height: 15px;
+}
+.mp-alt-main { min-width: 0; }
+.mp-alt-main .t {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.mp-alt-main .a {
+  display: block;
+  margin-top: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+.mp-alt-note {
+  display: block;
+  margin-top: 3px;
+  font-size: 11.5px;
+  font-style: normal;
+  color: #b45309;
+}
+.dark .mp-alt-note { color: #fbbf24; }
+.mp-alt-go {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--mp-primary);
+  color: #fff;
+  opacity: 0.9;
+  transition: transform 0.15s, opacity 0.15s;
+}
+.mp-alt-go svg { width: 12px; height: 12px; }
+.mp-alt-item:hover .mp-alt-go { opacity: 1; transform: scale(1.06); }
+.mp-alt-foot {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px solid var(--mp-divider);
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+/* 移动端：选版面板贴边收缩 */
+@media (max-width: 700px) {
+  .mp-alt-mask { padding: 14px; }
+  .mp-alt-card { max-height: calc(100vh - 28px); }
+  .mp-alt-src { max-width: 90px; }
+}
+
+/* ---------- 内容区顶部功能区右侧：平台引擎设置入口（齿轮） ---------- */
+.mp-tools-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  margin-left: 8px;
+  padding: 0;
+  border: 1px solid var(--border-subtle);
+  border-radius: 9px;
+  background: var(--glass-2);
+  color: var(--text-muted);
+  cursor: pointer;
+  text-decoration: none;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+.mp-tools-btn:hover { color: var(--text-primary); background: var(--mp-hover); }
+.mp-tools-btn:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 1px; }
+.mp-tools-btn svg { width: 15px; height: 15px; }
+

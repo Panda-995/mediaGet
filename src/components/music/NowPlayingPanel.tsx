@@ -14,16 +14,17 @@ import {
   BR_LABEL,
   formatSize,
   type SearchSourceKey,
-} from "@/components/music/types";
+} from "@/types/music";
 import {
   trackDownloadSpec,
   type DirectData,
   type SearchItem,
-} from "@/lib/music-client";
+} from "@/lib/client/music-client";
 import { PlatformIcon } from "@/components/music/platform-icons";
 import { sourceMetaFor, type SearchChip } from "./source-meta";
-import IconButton from "./icon-btn";
-import { EqBars } from "./eq-bars";
+import IconButton from "./IconButton";
+import FavoriteButton from "./FavoriteButton";
+import { EqBars } from "./EqBars";
 import { PseudoSpectrum } from "./pseudo-spectrum";
 
 export interface NowPlayingPanelProps {
@@ -45,6 +46,8 @@ export interface NowPlayingPanelProps {
   onCoverError: () => void;
   copyUrl: () => void;
   onShowInfo: (item: SearchItem, index: number) => void;
+  /** 收藏按钮动作完成回调（父层弹轻提示）；不传则静默 */
+  onFavoriteToggled?: (result: { added: boolean; persistFailed: boolean }) => void;
 }
 
 /**
@@ -69,6 +72,7 @@ export default function NowPlayingPanel({
   onCoverError,
   copyUrl,
   onShowInfo,
+  onFavoriteToggled,
 }: NowPlayingPanelProps) {
   /** 下载入口决策（源通道引擎统一入口，见 music-client trackDownloadSpec） */
   const download = direct
@@ -109,8 +113,8 @@ export default function NowPlayingPanel({
         )}
       </button>
       {/* 外圈音浪：原生 Canvas 画的伪频谱环（几何与动态见 pseudo-spectrum.tsx，
-          画布框取封面 120%，样式见 .mp-spectrum） */}
-      <PseudoSpectrum playing={playing} />
+          画布框取封面 120%，样式见 .mp-spectrum）} */}
+      {playing && <PseudoSpectrum playing={playing} />}
     </div>
   );
 
@@ -154,6 +158,7 @@ export default function NowPlayingPanel({
         </div>
       )}
       <div className="mp-actrow">
+        <FavoriteButton item={picked} onToggled={onFavoriteToggled} />
         <IconButton title="复制直链" disabled={!direct} onClick={copyUrl}>
           {copied ? <Check /> : <Copy />}
         </IconButton>

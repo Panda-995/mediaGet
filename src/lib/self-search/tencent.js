@@ -7,6 +7,7 @@
  * 本模块为纯逻辑 + 默认编排：请求体/响应解析可单测。
  */
 import { SelfSearchError, SELF_SEARCH_FAILURE } from "./errors";
+import { searchWithRetry } from "./retry";
 import { zzcSign } from "../qqmusic-sign";
 import { postJson } from "./request";
 
@@ -121,23 +122,10 @@ export function parseTencentSearch(json) {
 
 /** QQ音乐搜索编排：最多重试 2 次，网络/结构异常统一归类 sources-down */
 export async function searchTencent(keyword, page, limit) {
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const body = buildTencentSearchBody(keyword, page, limit);
-      const url = buildTencentSearchUrl(body);
-      const json = await postJson(url, body, { headers: { "User-Agent": TENCENT_UA } });
-      return parseTencentSearch(json);
-    } catch (error) {
-      lastError = error;
-      if (error instanceof SelfSearchError) {
-        if (attempt === 1) throw error;
-        continue;
-      }
-    }
-  }
-  throw new SelfSearchError(
-    SELF_SEARCH_FAILURE.SOURCES_DOWN,
-    `QQ音乐搜索暂不可用${lastError ? `：${lastError.message}` : ""}`
-  );
+  return searchWithRetry(async () => {
+    const body = buildTencentSearchBody(keyword, page, limit);
+    const url = buildTencentSearchUrl(body);
+    const json = await postJson(url, body, { headers: { "User-Agent": TENCENT_UA } });
+    return parseTencentSearch(json);
+  }, "QQ音乐搜索暂不可用");
 }

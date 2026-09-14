@@ -1,5 +1,6 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { DEFAULT_MOBILE_UA } from "@/lib/default-mobile-ua";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -18,7 +19,7 @@ async function zuiyouParse(shareUrl) {
     return { code: 400, msg: "pid 不是数字" };
   }
 
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     "https://share.xiaochuankeji.cn/planck/share/post/detail_h5",
     {
       method: "POST",
@@ -27,6 +28,7 @@ async function zuiyouParse(shareUrl) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ h_av: "5.2.13.011", pid: intPid }),
+      timeoutMs: TIMEOUT.DEFAULT,
     }
   );
   const json = await res.json();

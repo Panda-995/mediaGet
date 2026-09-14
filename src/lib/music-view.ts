@@ -7,8 +7,8 @@
  * 因此常量与校验下沉到这里供服务端与客户端共用。
  */
 
-/** 视图：发现歌曲（搜索面板）/ 播放列表（结果面板） */
-export type MusicView = "search" | "playlist";
+/** 视图：发现歌曲（搜索面板）/ 播放列表（结果面板）/ 我的收藏（本地收藏管理） */
+export type MusicView = "search" | "playlist" | "favorites";
 
 /** 默认落点：发现歌曲 */
 export const DEFAULT_MUSIC_VIEW: MusicView = "search";
@@ -24,7 +24,7 @@ export const MUSIC_VIEW_KEY = "mp-music-view";
 export const MUSIC_VIEW_COOKIE_MAX_AGE = 60 * 60 * 24 * 365;
 
 export function isMusicView(v: unknown): v is MusicView {
-  return v === "search" || v === "playlist";
+  return v === "search" || v === "playlist" || v === "favorites";
 }
 
 /** 把任意来源（Cookie / localStorage / query）的值收敛为合法视图，非法一律返回 null */

@@ -1,3 +1,4 @@
+import { TIMEOUT, UA_CHROME_WIN126, fetchWithTimeout } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
 import crypto from "crypto";
@@ -15,8 +16,7 @@ const BILIBILI_USER_AGENT = process.env.BILIBILI_USER_AGENT ||
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36";
 
 // 现代浏览器 UA：部分公开接口（空间信息等）用旧 UA 会被风控拦截（-799 / -401）
-const MODERN_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const MODERN_USER_AGENT = UA_CHROME_WIN126;
 
 const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
 
@@ -172,7 +172,7 @@ async function bilibiliRequest(url, headers = {}) {
   // 用池内 Cookie 自动重试一次即可放行（最多 2 次）。
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
-      const response = await fetch(url, {
+      const response = await fetchWithTimeout(url, {
         headers: {
           ...headers,
           // 允许调用方指定 UA（如空间信息接口需现代浏览器 UA 规避风控）
@@ -189,6 +189,7 @@ async function bilibiliRequest(url, headers = {}) {
           ),
         },
         redirect: "follow",
+        timeoutMs: TIMEOUT.DEFAULT,
       });
       // 先把 set-cookie（buvid3 等）吸收进池，供重试与后续请求使用
       absorbSetCookies(response);
@@ -268,7 +269,10 @@ async function getBilibiliVideoInfo(url) {
     let bvid;
     
     if (parsedUrl.hostname === "b23.tv") {
-      const response = await fetch(url, { redirect: "follow" });
+      const response = await fetchWithTimeout(url, {
+        redirect: "follow",
+        timeoutMs: TIMEOUT.SHORT,
+      });
       const redirectUrl = new URL(response.url);
       bvid = redirectUrl.pathname;
     } else if (

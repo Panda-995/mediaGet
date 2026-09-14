@@ -1,13 +1,15 @@
 import { createApiHandler } from "@/lib/api-middleware";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 async function acfunParse(shareUrl) {
-  const res = await fetch(shareUrl, {
+  const res = await fetchWithTimeout(shareUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (iPhone; CPU iPhone OS 11_0 like Mac OS X) AppleWebKit/604.1.38 (KHTML, like Gecko) Version/11.0 Mobile/15A372 Safari/604.1",
     },
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   const html = await res.text();
 

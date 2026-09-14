@@ -8,7 +8,7 @@
  * 保留旧实现兼容：历史版本只写裸数字 key `mp-player-volume`，首次读取时迁移为
  * 本 JSON 的 volume 字段；写入方随后清掉旧 key，避免出现两份真源。
  */
-import { BR_DEFAULT, BR_OPTIONS } from "./types";
+import { BR_DEFAULT, BR_OPTIONS } from "@/types/music";
 
 export const PLAYER_PREFS_KEY = "mp-player-prefs";
 /** 历史音量 key（裸数字字符串）：仅作一次性迁移来源 */

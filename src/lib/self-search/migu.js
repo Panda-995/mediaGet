@@ -7,6 +7,7 @@
  * 搜索列表携带封面（img1/img2/img3），可直接作为 picUrlDirect 使用。
  */
 import { SelfSearchError, SELF_SEARCH_FAILURE } from "./errors";
+import { searchWithRetry } from "./retry";
 import { md5Hex } from "./crypto";
 import { fetchJson, upgradeToHttps } from "./request";
 
@@ -88,29 +89,16 @@ export function parseMiguSearch(json) {
 
 /** 咪咕搜索编排：签名带时间戳，每次尝试重建；网络/结构异常统一归类 sources-down */
 export async function searchMigu(keyword, page, limit) {
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const { url, headers } = buildMiguSearchUrl(keyword, page, limit);
-      const json = await fetchJson(url, {
-        headers: {
-          uiVersion: "A_music_3.6.1",
-          ...headers,
-          channel: "0146921",
-          "User-Agent": MIGU_UA,
-        },
-      });
-      return parseMiguSearch(json);
-    } catch (error) {
-      lastError = error;
-      if (error instanceof SelfSearchError) {
-        if (attempt === 1) throw error;
-        continue;
-      }
-    }
-  }
-  throw new SelfSearchError(
-    SELF_SEARCH_FAILURE.SOURCES_DOWN,
-    `咪咕搜索暂不可用${lastError ? `：${lastError.message}` : ""}`
-  );
+  return searchWithRetry(async () => {
+    const { url, headers } = buildMiguSearchUrl(keyword, page, limit);
+    const json = await fetchJson(url, {
+      headers: {
+        uiVersion: "A_music_3.6.1",
+        ...headers,
+        channel: "0146921",
+        "User-Agent": MIGU_UA,
+      },
+    });
+    return parseMiguSearch(json);
+  }, "咪咕搜索暂不可用");
 }

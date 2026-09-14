@@ -1,11 +1,11 @@
+import { UA_EDGE_WIN129 } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
 
 export const runtime = "nodejs";
 
 /** 小红书 H5：桌面 Chrome UA，短链统一走 https */
-const XHS_USER_AGENT =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0";
+const XHS_USER_AGENT = UA_EDGE_WIN129;
 
 // 可选：浏览器登录小红书后复制的 Cookie，可显著降低数据中心/海外出口被风控概率
 const XHS_COOKIE = process.env.XHS_COOKIE || "";

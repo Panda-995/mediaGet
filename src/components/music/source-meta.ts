@@ -1,4 +1,4 @@
-import { SEARCH_SOURCES, SELF_SEARCH_SOURCES, type SearchSourceKey } from "./types";
+import { SEARCH_SOURCES, SELF_SEARCH_SOURCES, type SearchSourceKey } from "@/types/music";
 
 /** 搜索源 chip 的统一展示形态：内置 GD 源 + 内置自研直连搜索源 */
 export interface SearchChip {

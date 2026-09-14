@@ -7,6 +7,7 @@
  * 本模块为纯逻辑 + 默认编排：URL/表单/解析可单测，fetch 失败按 sources-down 归类。
  */
 import { SelfSearchError, SELF_SEARCH_FAILURE } from "./errors";
+import { searchWithRetry } from "./retry";
 import { wyEapi } from "./crypto";
 import { postFormJson, upgradeToHttps } from "./request";
 
@@ -64,25 +65,12 @@ export function parseNeteaseSearch(json) {
 
 /** 网易云搜索编排：最多重试 2 次，网络/结构异常统一归类 sources-down */
 export async function searchNetease(keyword, page, limit) {
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const json = await postFormJson(
-        NETEASE_SEARCH_URL,
-        buildNeteaseSearchForm(keyword, page, limit),
-        { headers: NETEASE_HEADERS }
-      );
-      return parseNeteaseSearch(json);
-    } catch (error) {
-      lastError = error;
-      if (error instanceof SelfSearchError) {
-        if (attempt === 1) throw error;
-        continue;
-      }
-    }
-  }
-  throw new SelfSearchError(
-    SELF_SEARCH_FAILURE.SOURCES_DOWN,
-    `网易云搜索暂不可用${lastError ? `：${lastError.message}` : ""}`
-  );
+  return searchWithRetry(async () => {
+    const json = await postFormJson(
+      NETEASE_SEARCH_URL,
+      buildNeteaseSearchForm(keyword, page, limit),
+      { headers: NETEASE_HEADERS }
+    );
+    return parseNeteaseSearch(json);
+  }, "网易云搜索暂不可用");
 }

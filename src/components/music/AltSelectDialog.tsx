@@ -1,8 +1,8 @@
 "use client";
 
 import { AlertTriangle, Play, X } from "lucide-react";
-import type { SearchItem } from "@/lib/music-client";
-import type { AltCandidate } from "./use-player-engine";
+import type { SearchItem } from "@/lib/client/music-client";
+import type { AltCandidate } from "./alt-candidates";
 import { sourceMetaFor, type SearchChip } from "./source-meta";
 import { PlatformIcon } from "./platform-icons";
 

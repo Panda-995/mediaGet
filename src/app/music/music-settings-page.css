@@ -1,0 +1,321 @@
+/* music.css 片段 8/8 —— 专用设置页 /music/settings 与登录页 /music/settings/login 的页面态样式
+   （.is-page 控制台式：铺宽卡片、横幅、正文限宽、放大的列表行、底部操作条）与小屏适配。
+   片段顺序即层叠顺序，不得随意调换（见 music-base.css 头部说明）。 */
+
+/* ============================================================
+   专用设置页 /music/settings（与登录页 /music/settings/login）
+   设置页（.is-page）= 控制台式（区别于弹层卡片）：
+     · 控制台标题栏（图标 + 大标题 + 副标题）已上移到站点顶部导航
+       （components/SiteHeader.tsx），页面内不再重复渲染，也没有二级导航；
+     · 正文内部滚动，居中限宽，区块顺序排布，每块自带表/列表容器；
+     · 底部为常驻操作条：左状态胶囊 / 右操作组，主按钮「保存」突出。
+   弹层（音乐页齿轮）仍沿用卡片样式，不受本页规则影响。
+   ============================================================ */
+
+/* 页面容器：整列铺满 + 柔和顶部光晕 */
+.mp-settings-page {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background:
+    radial-gradient(900px 260px at 50% -60px,
+      color-mix(in srgb, var(--mp-primary) 8%, transparent),
+      transparent 70%),
+    var(--background);
+}
+
+/* 面板铺满且透明 */
+.mp-settings-card.is-page {
+  width: 100%;
+  max-width: none;
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  border: none;
+  border-radius: 0;
+  background: transparent;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+  animation: none;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ===== 头部：控制台标题栏已上移到站点顶部导航（components/SiteHeader.tsx）
+   页面态不再渲染卡片内标题栏；弹层（音乐页齿轮）仍保留 .mp-settings-head ===== */
+.mp-settings-card.is-page .mp-settings-head { display: none; }
+.mp-settings-headline {
+  display: inline-flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+.mp-settings-headicon {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  padding: 6px;
+  border-radius: 9px;
+  background: color-mix(in srgb, var(--mp-primary) 14%, transparent);
+  color: var(--mp-primary);
+}
+
+/* ===== 横幅 ===== */
+.mp-settings-card.is-page .mp-settings-banner {
+  margin: 14px 28px 0;
+  border-radius: 10px;
+}
+
+/* ===== 正文：居中限宽，区块按序排布，每块内部自带表/列表容器 ===== */
+.mp-settings-card.is-page .mp-settings-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 26px 28px 36px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 28px;
+}
+.mp-settings-card.is-page .mp-settings-sec {
+  width: 100%;
+  max-width: 940px;
+  min-width: 0;
+}
+.mp-settings-card.is-page .mp-settings-sec + .mp-settings-sec {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: none;
+}
+.mp-settings-card.is-page .mp-settings-sectitle {
+  font-size: 15px;
+  letter-spacing: 0.2px;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+/* ===== A/B. 列表：页面态放宽行高、放大字号与控件 ===== */
+.mp-settings-card.is-page .mp-list { border-radius: 16px; }
+.mp-settings-card.is-page .mp-list-item { padding: 14px 20px; gap: 14px; }
+.mp-settings-card.is-page .mp-list-ic { width: 34px; height: 34px; border-radius: 10px; }
+.mp-settings-card.is-page .mp-list-ic svg { width: 17px; height: 17px; }
+.mp-settings-card.is-page .mp-list-title { font-size: 13.5px; }
+.mp-settings-card.is-page .mp-list-desc { font-size: 11.5px; }
+.mp-settings-card.is-page .mp-engine-name { font-size: 13.5px; }
+.mp-settings-card.is-page .mp-engine-slots { gap: 22px; }
+.mp-settings-card.is-page .mp-engine-slot { gap: 8px; }
+.mp-settings-card.is-page .mp-engine-slotic { width: 14px; height: 14px; }
+.mp-settings-card.is-page .mp-engine-headic { width: 34px; height: 34px; }
+/* 页面态列宽 = 14 锁图标位 + 8 gap + 42 开关 */
+.mp-settings-card.is-page .mp-engine-item .mp-engine-slot,
+.mp-settings-card.is-page .mp-engine-head .mp-engine-slot { width: 64px; }
+.mp-settings-card.is-page .mp-engine-head .mp-engine-slotlabel { width: 42px; }
+.mp-settings-card.is-page .mp-engine-head { padding-top: 11px; padding-bottom: 11px; }
+.mp-settings-card.is-page .mp-settings-sw { width: 42px; height: 24px; }
+.mp-settings-card.is-page .mp-settings-knob { width: 18px; height: 18px; }
+.mp-settings-card.is-page .mp-settings-sw.is-on .mp-settings-knob {
+  transform: translateX(18px);
+}
+.mp-settings-card.is-page .mp-settings-step,
+.mp-settings-card.is-page .mp-settings-num { height: 30px; }
+
+/* ===== C. 底部操作条：状态胶囊 + 操作组，主按钮突出 ===== */
+.mp-settings-card.is-page .mp-settings-foot {
+  flex: none;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 12px 20px;
+  padding: 14px 28px 16px;
+  border-top: 1px solid var(--mp-divider);
+  background: color-mix(in srgb, var(--background) 85%, transparent);
+  backdrop-filter: blur(14px) saturate(140%);
+  -webkit-backdrop-filter: blur(14px) saturate(140%);
+}
+.mp-settings-card.is-page .mp-settings-status { min-height: 0; display: flex; align-items: center; }
+.mp-settings-card.is-page .mp-settings-msg {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  font-size: 12px;
+  color: var(--text-primary);
+}
+.mp-settings-card.is-page .mp-settings-auth {
+  margin-left: 6px;
+  padding-left: 10px;
+  border-left: 1px solid var(--mp-divider);
+}
+.mp-settings-card.is-page .mp-settings-keyrow {
+  grid-column: 1 / -1;
+  padding: 10px 12px;
+  border: 1px dashed var(--mp-divider);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--mp-soft) 40%, transparent);
+}
+.mp-settings-card.is-page .mp-settings-actions { justify-content: flex-end; gap: 10px; }
+.mp-settings-card.is-page .mp-settings-btn { height: 38px; padding: 0 14px; font-size: 13px; }
+.mp-settings-card.is-page .mp-settings-btn.is-primary {
+  height: 38px;
+  padding: 0 22px;
+  font-weight: 600;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--mp-primary) 28%, transparent);
+}
+
+@media (max-width: 700px) {
+  .mp-settings-card.is-page .mp-settings-banner { margin: 12px 16px 0; }
+  .mp-settings-card.is-page .mp-settings-body { padding: 18px 16px 26px; gap: 22px; }
+  .mp-settings-card.is-page .mp-settings-foot {
+    grid-template-columns: 1fr;
+    padding: 12px 16px 14px;
+  }
+  .mp-settings-card.is-page .mp-settings-actions { justify-content: stretch; }
+  .mp-settings-card.is-page .mp-settings-actions .mp-settings-btn { flex: 1 1 auto; }
+}
+
+/* 设置页加载 / 失败提示（整行提示条，不做浮动卡片） */
+.mp-settings-note {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 14px 28px;
+  border-bottom: 1px solid var(--mp-divider);
+  font-size: 13.5px;
+  color: var(--text-muted);
+}
+.mp-settings-note.is-err { color: #b91c1c; }
+.dark .mp-settings-note.is-err { color: #f87171; }
+.mp-settings-note svg { width: 16px; height: 16px; flex: none; }
+.mp-settings-note .mp-settings-btn { margin-left: auto; }
+@media (max-width: 700px) {
+  .mp-settings-note { padding: 12px 16px; }
+}
+
+/* 登录页：居中窄卡片 */
+.mp-login-wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  overflow-y: auto;
+}
+.mp-login-card {
+  display: flex;
+  flex-direction: column;
+  width: min(380px, 100%);
+  padding: 28px 26px 22px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 18px;
+  background: color-mix(in srgb, var(--background) 94%, transparent);
+  backdrop-filter: blur(22px) saturate(150%);
+  -webkit-backdrop-filter: blur(22px) saturate(150%);
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.22);
+  animation: mp-info-pop 0.2s cubic-bezier(0.22, 0.8, 0.2, 1);
+}
+.mp-login-head {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 18px;
+}
+.mp-login-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--mp-primary) 14%, transparent);
+  color: var(--mp-primary);
+}
+.mp-login-badge svg { width: 22px; height: 22px; }
+.mp-login-title { margin: 0; font-size: 20px; font-weight: 700; color: var(--text-primary); }
+.mp-login-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  margin: 0;
+  padding: 9px 11px;
+  border: 1px solid color-mix(in srgb, #dc2626 35%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #dc2626 8%, transparent);
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: #b91c1c;
+}
+.dark .mp-login-error { color: #f87171; }
+.mp-login-error svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+.mp-login-field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+.mp-login-label { font-size: 12.5px; font-weight: 600; color: var(--text-primary); }
+.mp-login-inputwrap { position: relative; display: flex; align-items: center; }
+.mp-login-inputicon {
+  position: absolute;
+  left: 11px;
+  width: 15px;
+  height: 15px;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+.mp-login-input {
+  width: 100%;
+  padding: 10px 12px 10px 34px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--mp-hover);
+  color: var(--text-primary);
+  font-size: 13.5px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.mp-login-input:focus {
+  outline: none;
+  border-color: var(--mp-primary);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--mp-primary) 22%, transparent);
+}
+.mp-login-input:disabled { opacity: 0.6; }
+.mp-login-submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--mp-primary);
+  color: #fff;
+  font-size: 13.5px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: filter 0.15s, opacity 0.15s;
+}
+.mp-login-submit:hover:not(:disabled) { filter: brightness(1.06); }
+.mp-login-submit:disabled { opacity: 0.55; cursor: not-allowed; }
+.mp-login-submit:focus-visible { outline: 2px solid var(--mp-primary); outline-offset: 2px; }
+.mp-login-submit svg { width: 15px; height: 15px; }
+.mp-login-back {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  margin-top: 14px;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  text-decoration: none;
+}
+.mp-login-back:hover { color: var(--text-primary); }
+.mp-login-back svg { width: 13px; height: 13px; }
+
+@media (max-width: 700px) {
+  .mp-settings-page { padding: 12px; }
+  .mp-login-wrap { padding: 16px; align-items: flex-start; }
+  .mp-settings-card.is-page { width: 100%; }
+}

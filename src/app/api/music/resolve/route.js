@@ -1,3 +1,4 @@
+import { UA_CHROME_WIN126 } from "@/lib/http";
 import {
   beijingNow,
   getCachedResponse,
@@ -81,7 +82,7 @@ const META_TIMEOUT = 8000;
 /** QQ 官方歌曲信息接口请求头（与 qqmusic-id.js 同源） */
 const QQ_META_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    UA_CHROME_WIN126,
   Accept: "application/json, text/plain, */*",
   Referer: "https://y.qq.com/",
 };
@@ -497,7 +498,7 @@ export async function GET(request) {
       // getSongInfo 免登录即可返回 songName/singers/album_img（VIP 曲同样带元数据）
       const json = await fetchMetaJson(buildKugouPlayUrl(normalizedHash), {
         "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+          UA_CHROME_WIN126,
         Accept: "application/json, text/plain, */*",
       });
       const songInfoMeta = parseKugouSongInfoMeta(json);

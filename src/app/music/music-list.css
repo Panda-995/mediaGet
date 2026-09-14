@@ -1,0 +1,613 @@
+/* music.css 片段 2/8 —— 发现歌曲 / 播放列表主体（左半区）：视图切换、搜索落地 hero、
+   音源 chips 与聚合搜索伪 chip、最近搜索、轨道列表与列模板、收藏红心与「我的收藏」面板、
+   列表底部自动加载 / 到底 / 出错与空态。
+   片段顺序即层叠顺序，不得随意调换（见 music-base.css 头部说明）。 */
+
+/* ---------- 主体：左列表 / 右正在播放 ---------- */
+.mp-body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+}
+
+.mp-main {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 内容区顶部功能区：视图切换（发现歌曲 / 播放列表）常驻，不随内容滚动 */
+.mp-tools {
+  flex: none;
+  display: flex;
+  align-items: center;
+  padding: 8px 24px;
+}
+
+.mp-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 20px 24px 28px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 搜索落地（hero） */
+.mp-hero {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  gap: 10px;
+  padding: 30px 8px;
+}
+.mp-hero h1 {
+  font-size: 30px;
+  font-weight: 800;
+  letter-spacing: -0.6px;
+  margin: 0;
+}
+.mp-hero .mp-hero-sub {
+  margin: 0 0 6px;
+  font-size: 14px;
+  color: var(--text-secondary);
+}
+.mp-search-big {
+  width: min(560px, 100%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 48px;
+  padding: 6px 6px 6px 18px;
+  border-radius: 15px;
+  background: color-mix(in srgb, var(--background) 92%, transparent);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 8px 28px color-mix(in srgb, var(--text-primary) 9%, transparent);
+  transition: box-shadow 0.2s, border-color 0.2s;
+}
+.dark .mp-search-big { background: rgba(255, 255, 255, 0.06); }
+.mp-search-big:focus-within {
+  border-color: var(--mp-primary);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--mp-primary) 15%, transparent), 0 8px 28px color-mix(in srgb, var(--text-primary) 9%, transparent);
+}
+.mp-search-big svg { width: 19px; height: 19px; color: var(--text-muted); flex: none; }
+.mp-search-big input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  background: transparent;
+  font-size: 15px;
+  color: var(--text-primary);
+  outline: none;
+}
+.mp-search-big button[type='submit'] {
+  width: 38px;
+  height: 38px;
+  border: none;
+  border-radius: 50%;
+  background: var(--mp-primary);
+  color: #fff;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  flex: none;
+  transition: filter 0.2s, transform 0.15s;
+}
+.mp-search-big button[type='submit']:hover { filter: brightness(1.08); }
+.mp-search-big button[type='submit']:active { transform: scale(0.93); }
+.mp-search-big button[type='submit']:disabled { opacity: 0.55; cursor: not-allowed; }
+.mp-search-big button[type='submit'] svg { width: 18px; height: 18px; }
+
+.mp-chiprow { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 16px; }
+.mp-src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  height: 32px;
+  padding: 0 13px;
+  border-radius: 999px;
+  border: 1px solid var(--border-subtle);
+  background: var(--glass-2);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.18s;
+}
+.mp-src-chip .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--sc, var(--text-muted)); }
+.mp-src-chip svg,
+.mp-src-chip img { flex: none; }
+.mp-src-chip:hover { color: var(--text-primary); border-color: var(--border-medium); }
+.mp-src-chip.is-active {
+  border-color: var(--sc, var(--mp-primary));
+  background: color-mix(in srgb, var(--sc, var(--mp-primary)) 9%, transparent);
+  color: var(--text-primary);
+  font-weight: 600;
+  box-shadow: 0 3px 12px color-mix(in srgb, var(--sc, var(--mp-primary)) 16%, transparent);
+}
+.mp-src-chip.mp-src-chip-ext .dot {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 6px color-mix(in srgb, var(--sc) 70%, transparent);
+}
+/* 内置自研直连搜索源 chip：正常走平台品牌 logo（kugou / migu / tencent 均已收录）；
+   仅当某源缺品牌 SVG 时才落到这里的品牌色实心圆点兜底 */
+.mp-src-chip.mp-src-chip-self .dot {
+  width: 8px;
+  height: 8px;
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--sc) 16%, transparent);
+}
+/* 「聚合搜索」伪 chip（行首，非真实音源）：图标改用 public/logos/aggregate.svg 的
+   14px <img>（多路音源汇聚图示），与平台 logo 同尺寸 —— 不再需要自绘圆点。
+   mp-src-chip-agg 保留为该伪 chip 的样式钩子（选中态沿用 .is-active 的主色描边/底色）。 */
+
+.mp-tags { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-top: 22px; }
+.mp-tag {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 5px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mp-tag:hover { background: var(--mp-hover); color: var(--text-primary); }
+
+/* 最近搜索（本机缓存，见 search-history.ts）：搜索框下方一行历史词，与热门标签同处一区。
+   历史词用轻填充胶囊区分于热门标签的透明文字按钮，胶囊内右侧带删除钮，行尾一个「清空」。
+   删除钮不做 hover 才显形——触屏没有 hover，常显（低透明度）才点得到。 */
+.mp-hist {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  max-width: min(620px, 100%);
+  margin-top: 22px;
+}
+.mp-hist-cap { font-size: 12px; color: var(--text-muted); letter-spacing: 0.2px; }
+.mp-hist-chip {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px;
+  background: var(--mp-hover);
+  transition: background 0.15s;
+}
+.mp-hist-chip:hover { background: color-mix(in srgb, var(--mp-primary) 12%, var(--mp-hover)); }
+.mp-hist-kw {
+  border: none;
+  background: transparent;
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding: 5px 4px 5px 10px;
+  border-radius: 8px 0 0 8px;
+  cursor: pointer;
+  max-width: 190px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  transition: color 0.15s;
+}
+.mp-hist-chip:hover .mp-hist-kw { color: var(--text-primary); }
+.mp-hist-del {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  margin-right: 3px;
+  padding: 0;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s, background 0.15s, color 0.15s;
+}
+.mp-hist-del:hover,
+.mp-hist-del:focus-visible { opacity: 1; background: var(--mp-hover); color: var(--text-primary); }
+.mp-hist-del svg { width: 12px; height: 12px; }
+.mp-hist-clear {
+  border: none;
+  background: transparent;
+  font-size: 12px;
+  color: var(--text-muted);
+  padding: 5px 8px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.mp-hist-clear:hover { background: var(--mp-hover); color: var(--text-primary); }
+
+/* 轨道列表（歌名 / 作者 / 专辑 / 平台 分列）。
+   列头 .mp-colhead 独立于滚动区之上（不在 .mp-scroll 内）常驻显示，
+   因此无需任何自身背景去遮挡滚动内容——列表行在滚动区顶部即被裁切，
+   列头下方直接透出父级 .mp-app 背景，与四周颜色天然一致，仅留一条下边框。 */
+/* ⚠️ 行容器必须用独有 class（不可叫 .mp-list）：同文件的设置面板卡片也定义了
+   `.mp-list { overflow: hidden }`，两条同名规则会叠加。`.mp-scroll` 是列向 flex 容器，
+   而 flex 子项一旦 overflow 非 visible，其自动最小尺寸就退化为 0 —— 行数超过一屏时
+   这个容器被压缩并裁掉溢出行（不可滚动、看不到），列表看着只出首屏十来条就不停转圈。
+   `flex: none` 兜底：容器永远按内容高度撑开，超出部分交给 .mp-scroll 滚动。 */
+.mp-tracklist { display: flex; flex-direction: column; gap: 2px; flex: none; }
+
+/* 列模板：序号 | 歌名(含播放态与行内动作钮) | 作者 | 专辑 | 平台 | 线路。
+   拆成逐列变量、再由两处模板拼装，而不是各写一整条宽度串——「我的收藏」面板没有线路列
+   （收藏不存带时效的 line，见 favorites.ts），两边的差别只是少拼最后一条轨道：
+   轨道的**宽度**只有这一份定义，改列宽不会漏改一边。 */
+:root {
+  --mp-col-idx: 30px;
+  --mp-col-title: minmax(0, 1.6fr);
+  --mp-col-artist: minmax(0, 1fr);
+  --mp-col-album: minmax(0, 1.2fr);
+  --mp-col-src: 100px;
+  --mp-col-line: 128px;
+  --mp-cols: var(--mp-col-idx) var(--mp-col-title) var(--mp-col-artist) var(--mp-col-album) var(--mp-col-src) var(--mp-col-line);
+  --mp-cols-favs: var(--mp-col-idx) var(--mp-col-title) var(--mp-col-artist) var(--mp-col-album) var(--mp-col-src);
+}
+
+/* 「我的收藏」的列容器（.mp-colhead / .mp-tracklist 都挂）：换用少一列的模板。
+   逐列变量在两套模板里是同一份，所以这里只换「拼哪几条」。 */
+.mp-favs { --mp-cols: var(--mp-cols-favs); }
+
+/* 列头栏：左右留白与 .mp-scroll 的水平 padding 对齐，保证列宽与行对齐 */
+.mp-list-head {
+  flex: none;
+  padding: 0 24px;
+}
+
+.mp-colhead {
+  display: grid;
+  grid-template-columns: var(--mp-cols);
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px 6px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+/* 列表视图的滚动区：顶部留 6px 呼吸间距，内容滚到列头边框线处即被裁切 */
+.mp-scroll.mp-list-scroll { padding-top: 6px; }
+.mp-colhead .mp-ch {
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.mp-row {
+  display: grid;
+  grid-template-columns: var(--mp-cols);
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  text-align: left;
+  border: none;
+  background: transparent;
+  color: inherit;
+  padding: 8px 10px;
+  border-radius: 10px;
+  cursor: pointer;
+  font: inherit;
+  transition: background 0.15s;
+}
+.mp-row:hover { background: var(--mp-row-hover); }
+.mp-row.is-active { background: var(--mp-primary-bg); }
+.mp-row:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--mp-primary) 65%, transparent);
+  outline-offset: -2px;
+}
+
+/* 序号列（歌名左侧；当前行高亮） */
+.mp-idx {
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-muted);
+  transition: color 0.15s;
+}
+.mp-row.is-active .mp-idx { color: var(--mp-primary); }
+.mp-spin { animation: mp-spin 0.9s linear infinite; }
+
+.mp-eq { display: inline-flex; gap: 2.5px; align-items: flex-end; height: 14px; }
+.mp-eq i {
+  width: 2.5px;
+  background: var(--mp-eq);
+  border-radius: 2px;
+  animation: mp-eq-bounce 0.9s ease-in-out infinite;
+}
+.mp-eq i:nth-child(2) { animation-delay: 0.2s; }
+.mp-eq i:nth-child(3) { animation-delay: 0.4s; }
+.mp-eq.paused i { animation-play-state: paused; height: 6px !important; }
+.mp-eq i:nth-child(1) { height: 8px; }
+.mp-eq i:nth-child(2) { height: 13px; }
+.mp-eq i:nth-child(3) { height: 6px; }
+@keyframes mp-eq-bounce {
+  0%, 100% { transform: scaleY(0.4); }
+  50% { transform: scaleY(1); }
+}
+
+/* 信息列：歌名 / 作者 / 专辑 / 平台 */
+.mp-cell {
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-cell-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-primary);
+  transition: color 0.15s;
+}
+/* 歌名正文：按内容宽度排列（过长时才收缩省略），让行内播放控制紧跟文字右侧，
+   而不是被推到整列的最右端 */
+.mp-cell-title .mp-tt {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* 紧跟歌名右侧的行内播放态：悬停播放钮 / 当前行均衡条 / 加载中 */
+.mp-cell-title .mp-hover-play,
+.mp-cell-title .mp-eq,
+.mp-cell-title .mp-idx-load { flex: none; }
+.mp-cell-title .mp-hover-play {
+  display: inline-flex;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.mp-row:hover .mp-cell-title .mp-hover-play { opacity: 1; }
+.mp-cell-title .mp-hover-play svg { width: 15px; height: 15px; color: var(--text-primary); }
+.mp-cell-title .mp-idx-load svg { width: 14px; height: 14px; color: var(--mp-primary); }
+.mp-cell-artist {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.mp-cell-album {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mp-row.is-active .mp-cell-title { color: var(--mp-primary); }
+.mp-row.is-active .mp-cell-artist { color: color-mix(in srgb, var(--mp-primary) 78%, transparent); }
+
+.mp-cell-src {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--text-secondary);
+  min-width: 0;
+}
+.mp-cell-src .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--sc, var(--text-muted)); flex: none; }
+.mp-cell-src svg,
+.mp-cell-src img { flex: none; }
+
+/* 线路列：标注本页结果取回通道（同源代理命中哪个上游基址 / 浏览器直连），多页翻页时各行可能不同。
+   字号与其余列（平台/作者/专辑/列头）保持 13px 一致，仅圆点区分代理 / 直连 */
+.mp-cell-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.mp-cell-line .mp-line-dot {
+  flex: none;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mp-primary);
+}
+.mp-cell-line.is-direct .mp-line-dot { background: var(--success); }
+.mp-cell-line .mp-line-text {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-cell-line .mp-line-none { opacity: 0.5; }
+
+/* —— 收藏（歌名右侧的行内动作钮 +「我的收藏」面板）——
+   数据只存本机 localStorage（见 components/music/favorites.ts / favorites-store.ts），
+   这里只管样式。收藏面板的列表结构复用播放列表的类（--mp-cols / .mp-row / .mp-cell-*），
+   不另起一套行样式，只补工具条与它的几个控件。 */
+
+/* 歌名右侧的行内动作钮：播放列表结果行的收藏红心、收藏面板行内的同一颗心。
+   比 .mp-icon-btn 默认的 34px 小一号，与相邻 15px 的悬停播放钮齐平。
+   尺寸、悬停底与描边/实心沿用 .mp-icon-btn，颜色另起一套（见下方「红心」一段），
+   故这里只覆盖需要压过默认值的那几处。 */
+.mp-cell-title .mp-fav {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  /* .mp-icon-btn 的 transition 不含 opacity，而这个钮靠它显隐 */
+  transition: background 0.15s, transform 0.1s, color 0.15s, opacity 0.15s;
+}
+.mp-cell-title .mp-fav svg { width: 15px; height: 15px; }
+
+/* 红心固定「喜欢红」（--mp-fav-on），不跟主题色走：
+   收藏是**曲目状态**，而 .mp-icon-btn.on 的点亮色是留给单曲循环 / 静音这类
+   「当前模式」开关的——两种语义混用，会让排成一列的图标钮看起来像同一类状态。
+   未收藏时的悬停也预告同一个红：否则描边心先蓝后红，点下去多一次颜色跳变。
+   选择器叠加 .mp-icon-btn 是为了压过 .mp-icon-btn.on(:hover) 与
+   .mp-cell-title .mp-fav:hover 这些同等 / 更低优先级的规则，不依赖书写顺序。 */
+.mp-fav.mp-icon-btn:hover,
+.mp-fav.mp-icon-btn.on {
+  color: var(--mp-fav-on);
+}
+.mp-fav.mp-icon-btn.on:hover {
+  /* 悬停底色同步换成同色淡化：否则红心上会浮出一圈蓝晕（.on:hover 的 --mp-primary-bg） */
+  color: var(--mp-fav-on);
+  background: color-mix(in srgb, var(--mp-fav-on) 14%, transparent);
+}
+
+/* 收敛为「悬停 / 聚焦才显形」，语言对齐 .mp-cell-title .mp-hover-play。
+   但**只在真有悬停能力的精确指针设备上收敛**：触屏没有 hover，收起来等于没有收藏入口
+   （.mp-hover-play 可以收，因为整行本身就是播放按钮，星标没有这个兜底）。
+   已收藏的星标永远显形（.is-fav）——收藏面板里每行都处于已收藏态，
+   所以那条列表不需要额外规则来常显。 */
+@media (hover: hover) and (pointer: fine) {
+  .mp-cell-title .mp-fav { opacity: 0; }
+  .mp-row:hover .mp-cell-title .mp-fav,
+  .mp-row:focus-within .mp-cell-title .mp-fav,
+  .mp-cell-title .mp-fav.is-fav { opacity: 1; }
+}
+
+/* 「我的收藏」面板头部：标题 + 计数 + 仅存本机说明，右侧操作区。
+   它在 .mp-scroll 之外（与 .mp-list-head 平级），故左右留白要自己对齐——
+   桌面 24px / 窄屏 12px，与 .mp-scroll 及 .mp-list-head 的 padding 同值。 */
+.mp-fav-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  /* 与 .mp-list-head 同样 flex: none：.mp-main 是纵向 flex，
+     不写死会被下方 flex: 1 的滚动区压缩 */
+  flex: none;
+  padding: 2px 24px 12px;
+}
+.mp-fav-title { flex: none; font-size: 13px; color: var(--text-secondary); }
+.mp-fav-title b { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+.mp-fav-note {
+  margin-left: 8px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--mp-soft);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.mp-fav-acts { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+
+.mp-fav-filter {
+  width: 150px;
+  height: 30px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--mp-hover);
+  color: var(--text-primary);
+  font-size: 12px;
+  outline: none;
+}
+.mp-fav-filter::placeholder { color: var(--text-muted); }
+.mp-fav-filter:focus { border-color: var(--mp-primary); }
+
+.mp-fav-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+.mp-fav-btn svg { flex: none; width: 13px; height: 13px; }
+.mp-fav-btn:hover { background: var(--mp-hover); color: var(--text-primary); }
+.mp-fav-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.mp-fav-btn.is-primary { border-color: transparent; background: var(--mp-primary); color: #fff; }
+.mp-fav-btn.is-primary:hover { background: var(--mp-primary); color: #fff; opacity: 0.9; }
+.mp-fav-btn.is-danger { border-color: var(--error); color: var(--error); }
+
+/* 收藏面板的行不单独写样式：DOM 挂的就是 .mp-row / .mp-cell-*，
+   列宽由 --mp-cols 统一驱动，与播放列表天然对齐。 */
+
+.mp-fav-hint { padding: 10px 2px 0; font-size: 12px; color: var(--text-muted); }
+.mp-fav-foot {
+  display: flex;
+  align-items: flex-start;
+  gap: 7px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--mp-divider);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text-muted);
+}
+.mp-fav-foot svg { flex: none; width: 14px; height: 14px; margin-top: 2px; }
+
+/* 列表底部：自动加载 / 到底 / 出错提示 */
+.mp-loadmore {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 18px 8px 4px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.mp-loadmore svg { width: 14px; height: 14px; flex: none; }
+.mp-loadmore .mp-spin { color: var(--mp-primary); }
+.mp-loadmore .mp-load-err { display: inline-flex; align-items: center; gap: 6px; color: var(--error); }
+
+/* 加载 / 空态 */
+.mp-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  color: var(--text-muted);
+  font-size: 13.5px;
+  padding: 48px 16px;
+  text-align: center;
+}
+.mp-state svg { width: 44px; height: 44px; opacity: 0.35; }
+
+.mp-error {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+  color: var(--error);
+  font-size: 13px;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+.mp-error svg { width: 16px; height: 16px; flex: none; margin-top: 1px; }
+
+/* 右侧“正在播放”中展示直链获取失败原因 */
+.mp-play-err {
+  margin: 2px 0 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--error) 9%, transparent);
+  color: var(--error);
+  font-size: 12px;
+  line-height: 1.5;
+  display: flex;
+  gap: 7px;
+  align-items: flex-start;
+}
+.mp-play-err svg {
+  width: 15px;
+  height: 15px;
+  flex: none;
+  margin-top: 1.5px;
+}
+

@@ -84,6 +84,30 @@ describe("self-search 统一入口", () => {
     );
     expect(hasSelfSearchNextPage({ page: 1, limit: 20, read: 0, total: 0 })).toBe(false);
   });
+
+  it("hasSelfSearchNextPage：极端 total（全库命中量）也被翻页上限截断", () => {
+    // 实测腾讯《晴天》total=647083，纯按 total 算 hasMore 永远为 true →
+    // 前端触底 / 补屏会无限翻页（列表拉不完，底部一直转圈）
+    expect(
+      hasSelfSearchNextPage({ page: 2, limit: 20, read: 20, total: 647083 })
+    ).toBe(true);
+    expect(
+      hasSelfSearchNextPage({
+        page: SELF_SEARCH_PAGE_MAX,
+        limit: 20,
+        read: 20,
+        total: 647083,
+      })
+    ).toBe(false);
+    expect(
+      hasSelfSearchNextPage({
+        page: SELF_SEARCH_PAGE_MAX + 1,
+        limit: 20,
+        read: 20,
+        total: 647083,
+      })
+    ).toBe(false);
+  });
 });
 
 describe("网易云（netease）", () => {

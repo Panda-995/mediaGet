@@ -14,10 +14,15 @@
  * - 透传 Content-Type / Content-Length / Accept-Ranges
  * - 超时策略：首字节 30s 快速失败；传输中不设总时长上限（大视频弱网可能传很久），
  *   仅在持续 30s 无新数据时判定上游挂起并中止；客户端断开时同步中止上游
+ *
+ * 安全：目标 URL 由查询参数决定，入口统一走 lib/proxy-guard.js
+ * （IP 黑名单 + 限流 + SSRF 白名单，后者带 PROXY_SSRF_STRICT 灰度开关）。
  */
+import { UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
-import { isBlockedIP, getClientIP, logger } from "@/lib/api-utils";
+import { getClientIP, logger } from "@/lib/api-utils";
+import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
 
 function isXhsHost(hostname) {
   return hostname === "xhscdn.com" || hostname.endsWith(".xhscdn.com");
@@ -65,13 +70,10 @@ function isOpenEndedRange(range) {
 }
 
 export async function GET(request) {
-  // IP 黑名单：视频代理返回二进制流，无法套用解析接口的 JSON 蜜罐，
-  // 此处对黑名单 IP 保持 403（视频代理只是前端加载资源的通道，不承载解析宣传）。
+  // IP 黑名单 + 限流（代理端点独立配额，见 lib/proxy-guard.js）
+  const guard = guardProxyRequest(request, "video-proxy");
+  if (guard) return guard;
   const clientIP = getClientIP(request);
-  if (isBlockedIP(clientIP)) {
-    logger.warn(`黑名单 IP 被拦截(video-proxy): ip=${clientIP}`);
-    return new Response("Forbidden", { status: 403 });
-  }
 
   const { searchParams } = new URL(request.url);
   const encoded = searchParams.get("url");
@@ -101,10 +103,14 @@ export async function GET(request) {
   if (!/^https?:$/.test(target.protocol)) {
     return new Response("Only http(s) allowed", { status: 400 });
   }
+  // SSRF：目标指向内网/云元数据地址时直接拒绝
+  // （灰度：PROXY_SSRF_STRICT 未开启时只记录不拦截，见 lib/proxy-guard.js）
+  const blocked = checkProxyUrl(target.href, "video-proxy", clientIP);
+  if (blocked) return blocked;
 
   const headers = {
     "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+      UA_EDGE_WIN129,
     Accept: "video/mp4,video/*;q=0.9,*/*;q=0.8",
   };
   // 小红书视频 CDN 防盗链：必须 Referer: xiaohongshu.com，否则 403

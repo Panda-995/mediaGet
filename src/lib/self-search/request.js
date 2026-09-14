@@ -6,20 +6,20 @@
  */
 
 /** 默认浏览器 UA（部分平台要求非 Node UA） */
-export const BROWSER_UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+import { UA_CHROME_WIN126, fetchWithTimeout } from "@/lib/http";
+export const BROWSER_UA = UA_CHROME_WIN126;
 
 export const REQUEST_TIMEOUT = 10000;
 
 /** 发 GET 请求并解析 JSON；非 2xx / 非 JSON 抛错 */
 export async function fetchJson(url, { headers = {}, timeout = REQUEST_TIMEOUT } = {}) {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     headers: {
       "User-Agent": BROWSER_UA,
       Accept: "application/json, text/plain, */*",
       ...headers,
     },
-    signal: AbortSignal.timeout(timeout),
+    timeoutMs: timeout,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
   return await res.json();
@@ -28,7 +28,7 @@ export async function fetchJson(url, { headers = {}, timeout = REQUEST_TIMEOUT }
 /** 发 POST 表单（application/x-www-form-urlencoded）并解析 JSON */
 export async function postFormJson(url, form, { headers = {}, timeout = REQUEST_TIMEOUT } = {}) {
   const body = new URLSearchParams(form).toString();
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       "User-Agent": BROWSER_UA,
@@ -36,7 +36,7 @@ export async function postFormJson(url, form, { headers = {}, timeout = REQUEST_
       ...headers,
     },
     body,
-    signal: AbortSignal.timeout(timeout),
+    timeoutMs: timeout,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
   return await res.json();
@@ -44,7 +44,7 @@ export async function postFormJson(url, form, { headers = {}, timeout = REQUEST_
 
 /** 发 POST JSON（body 自动 stringify）并解析 JSON */
 export async function postJson(url, data, { headers = {}, timeout = REQUEST_TIMEOUT } = {}) {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     method: "POST",
     headers: {
       "User-Agent": BROWSER_UA,
@@ -52,7 +52,7 @@ export async function postJson(url, data, { headers = {}, timeout = REQUEST_TIME
       ...headers,
     },
     body: typeof data === "string" ? data : JSON.stringify(data),
-    signal: AbortSignal.timeout(timeout),
+    timeoutMs: timeout,
   });
   if (!res.ok) throw new Error(`HTTP ${res.status}: ${url}`);
   return await res.json();
@@ -79,7 +79,7 @@ export function upgradeToHttps(url) {
   return value;
 }
 
-/** 把歌手列表（形如 [{name}] 或字符串）拼接成 lx 风格的“、”分隔字符串 */
+/** 把歌手列表（形如 [{name}] 或字符串）拼接成 lx 风格的"、"分隔字符串 */
 export function formatSingerName(singers, key = "name") {
   if (typeof singers === "string") return singers || "";
   if (!Array.isArray(singers)) return "";

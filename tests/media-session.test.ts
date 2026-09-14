@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { platformBrandFor } from "@/components/music/platform-brand";
 import { nowPlayingTitle } from "@/components/music/use-media-session";
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 
 function track(overrides: Partial<SearchItem> = {}): SearchItem {
   return {

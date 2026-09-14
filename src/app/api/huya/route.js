@@ -1,15 +1,17 @@
 import { createApiHandler } from "@/lib/api-middleware";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 async function parseVideoId(videoId) {
   const reqUrl = `https://liveapi.huya.com/moment/getMomentContent?videoId=${videoId}`;
-  const res = await fetch(reqUrl, {
+  const res = await fetchWithTimeout(reqUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/85.0.4183.102 Safari/537.36",
       Referer: "https://v.huya.com/",
     },
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   const json = await res.json();
   const videoData = json?.data?.moment?.videoInfo;

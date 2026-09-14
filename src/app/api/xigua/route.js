@@ -1,6 +1,7 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
 import { getRedirectLocation } from "@/lib/redirect-location";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -13,7 +14,10 @@ const PAGE_HEADERS = {
 
 async function parseVideoId(videoId) {
   const reqUrl = `https://m.ixigua.com/douyin/share/video/${videoId}?aweme_type=107&schema_type=1&utm_source=copy&utm_campaign=client_share&utm_medium=android&app=aweme`;
-  const res = await fetch(reqUrl, { headers: PAGE_HEADERS });
+  const res = await fetchWithTimeout(reqUrl, {
+    headers: PAGE_HEADERS,
+    timeoutMs: TIMEOUT.DEFAULT,
+  });
   const html = await res.text();
   const re = /window\._ROUTER_DATA\s*=\s*(.*?)<\/script>/is;
   const m = html.match(re);

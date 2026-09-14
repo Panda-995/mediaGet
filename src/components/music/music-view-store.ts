@@ -16,6 +16,7 @@
  * MusicViewSeg 与 MusicExplorer 两处）。
  */
 import { useCallback, useSyncExternalStore } from "react";
+import { createExternalStore } from "@/lib/client/external-store";
 import {
   DEFAULT_MUSIC_VIEW,
   MUSIC_VIEW_COOKIE_MAX_AGE,
@@ -31,16 +32,17 @@ export interface MusicViewOption {
   label: string;
 }
 
-/** 顺序即切换器的展示顺序：发现歌曲（落地页）在前，播放列表在后 */
+/** 顺序即切换器的展示顺序：发现歌曲（落地页）在前，我的收藏（本地数据）在最后 */
 export const MUSIC_VIEWS: MusicViewOption[] = [
   { key: DEFAULT_MUSIC_VIEW, label: "发现歌曲" },
   { key: "playlist", label: "播放列表" },
+  { key: "favorites", label: "我的收藏" },
 ];
 
 let current: MusicView = DEFAULT_MUSIC_VIEW;
 /** 是否已用服务端下发的落点播种过（播种只允许发生一次，见 seedMusicView） */
 let seeded = false;
-const listeners = new Set<() => void>();
+const store = createExternalStore();
 
 export function getMusicView(): MusicView {
   return current;
@@ -74,7 +76,7 @@ export function setMusicView(view: MusicView): void {
   // 持久化无条件执行：即使视图没变也补写一次，避免 Cookie / localStorage 与实际落点漂移
   writeLocalPref(view);
   writeViewCookie(view);
-  if (changed) listeners.forEach((listener) => listener());
+  if (changed) store.notify();
 }
 
 /**
@@ -93,13 +95,6 @@ export function seedMusicView(view: MusicView): void {
   current = view;
 }
 
-function subscribe(listener: () => void): () => void {
-  listeners.add(listener);
-  return () => {
-    listeners.delete(listener);
-  };
-}
-
 /**
  * 读取当前视图并订阅变化。
  *
@@ -116,7 +111,7 @@ export function useMusicView(initialView?: MusicView): MusicView {
     () => initialView ?? DEFAULT_MUSIC_VIEW,
     [initialView]
   );
-  return useSyncExternalStore(subscribe, getMusicView, getServerView);
+  return useSyncExternalStore(store.subscribe, getMusicView, getServerView);
 }
 
 /**
@@ -144,5 +139,5 @@ export function restoreMusicView(): void {
 export function resetMusicViewForTest(): void {
   current = DEFAULT_MUSIC_VIEW;
   seeded = false;
-  listeners.clear();
+  store.clear();
 }

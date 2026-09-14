@@ -1,4 +1,5 @@
 import { createApiHandler } from "@/lib/api-middleware";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -23,13 +24,14 @@ function extractFromHtml(html) {
 }
 
 async function xinpianchangParse(shareUrl) {
-  const res = await fetch(shareUrl, {
+  const res = await fetchWithTimeout(shareUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/84.0.4147.125 Safari/537.3",
       "Upgrade-Insecure-Requests": "1",
       Referer: "https://www.xinpianchang.com/",
     },
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   const html = await res.text();
 

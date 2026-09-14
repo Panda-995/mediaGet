@@ -10,7 +10,7 @@
  *   可播副本）→ 按相关度降序 → 截断输出（供 MusicExplorer「聚合搜索」模式消费）。
  */
 
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 
 const CJK_RE = /[\u3400-\u9fff\uf900-\ufaff]/;
 const SEP_RE = /[\s,，、;；.。··/&+~_\-—]+/;

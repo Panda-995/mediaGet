@@ -6,7 +6,7 @@ import {
   musicLineMeta,
   requestDirect,
   requestPlayDirect,
-} from "@/lib/music-client";
+} from "@/lib/client/music-client";
 import {
   resetPlatformCapsForTest,
   setBuiltinPlayForTest,

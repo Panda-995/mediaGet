@@ -250,11 +250,12 @@ CURRENT(source,id,br)
 | 数据 | 载体 / key | TTL | 实现 |
 |---|---|---|---|
 | 播放偏好（音量 / 音质档 / 单曲循环 / 静音） | localStorage `mp-player-prefs`（单份 JSON，迁移旧裸数字 `mp-player-volume`） | 永久 | `player-prefs.ts` + `use-player-engine.ts` |
-| 音乐页视图（发现歌曲 / 播放列表） | Cookie `mp-music-view`（SSR 首帧读）+ localStorage `mp-music-view`（回落） | 永久 | `music-view-store.ts` + `lib/music-view.ts`；视图决定**首屏渲染哪块面板**，故偏好同时写 Cookie 让服务端可知（首帧即正确视图，刷新不闪）；`useMusicView(initialView)` 用 Cookie 值播种内存态，`restoreMusicView()` 只在服务端没读到 Cookie 时兜底 |
+| 音乐页视图（发现歌曲 / 播放列表 / 我的收藏） | Cookie `mp-music-view`（SSR 首帧读）+ localStorage `mp-music-view`（回落） | 永久 | `music-view-store.ts` + `lib/music-view.ts`；视图决定**首屏渲染哪块面板**，故偏好同时写 Cookie 让服务端可知（首帧即正确视图，刷新不闪）；`useMusicView(initialView)` 用 Cookie 值播种内存态，`restoreMusicView()` 只在服务端没读到 Cookie 时兜底 |
 | 上次播放会话（曲目 + 进度） | localStorage `mp-playback-session` | 24h | `playback-session.ts`；恢复走引擎 `restorePlayback`（暂停态定位，不自动出声、不进自动换源闭环） |
 | 播放列表快照（搜索结果 + 已翻页累积） | localStorage `mp-playlist-cache-v2`（单份 JSON，上限 400 条） | 永久（空结果即清） | `playlist-cache.ts`；仅单平台渠道下写——聚合列表来源混合、刷新后无从恢复，刻意不落盘；是否可回填由 `canRestorePlaylistSnapshot`（渠道偏好为单平台且来源一致）决定，恢复**只回填列表 / 关键词 / 翻页进度，不改写视图** |
 | 搜索渠道偏好（聚合 / 单平台） | localStorage `mp-search-channel`（`{v, agg, source}`） | 永久 | `MusicExplorer.tsx` 内 `readSearchChannelPref` / `writeSearchChannelPref`；只在用户显式交互时写（点 chip / 提交搜索），链接解析与快照恢复等被动变化不写，避免渠道被拖成并非用户所选 |
 | 最近搜索关键词 | localStorage `mp-search-history`（`{v, items}`，上限 8 条） | 永久 | `search-history.ts`；只存关键词不存渠道，点历史词按当前渠道重搜；纯个人行为明细，只留本机（§7.5） |
+| 个人收藏（曲目身份 + 元数据） | localStorage `mp-favorites`（`{v, items}`，上限 500 条） | 永久 | `favorites.ts`（纯变换 + IO 原语）+ `favorites-store.ts`（`useSyncExternalStore` 共享态，四处消费：结果行 / 正在播放卡片 / 底部播放条 / 「我的收藏」面板）。唯一键 `musicKey`（`source:id`），**刻意不做跨源合并**（`songIdentityKey` 会误合不同版本）；存 `urlId`（取直链要用，咪咕等源与 `id` 不同）、**不存 `line` 与直链**；上限按 `addedAt` 淘汰最旧；「我的收藏」面板**复用播放列表的 `.mp-row` / `.mp-cell-*` 与同一份逐列宽度变量**，不自持一套行样式（列宽只有一份定义，改列不会漏改一边），差异只有两处内容层面的：**不渲染「线路」列**（收藏不存 `line`，靠 `mp-favs` 换用少拼一条轨道的模板）、**行内动作钮直接复用 `FavoriteButton`**（面板里每行都是已收藏态，显示的就是点亮后的那颗心，点一下即取消收藏） |
 | 歌词（LRC 原文 + AMLL TTML 原文） | IndexedDB `mp-media-cache` | 30 天 | `media-cache.ts`；命中即免一次第三方请求 |
 | 封面配色（按封面 + 主题模式） | IndexedDB `mp-media-cache` | 30 天 | 同上；key 用 `picId`/曲目 id，不用带签名的图床直链（否则次次击穿） |
 
@@ -266,7 +267,11 @@ CURRENT(source,id,br)
 - **视图落点与数据回填分离**：刷新后停在「发现歌曲」还是「播放列表」只认 `mp-music-view`（恢复入口唯一：MusicExplorer 挂载恢复 effect）。列表快照只负责「上次的列表不销毁」，不得调 `setMusicView`——历史实现里快照恢复无条件切播放列表，既覆盖用户显式选择、又把偏好就地改写成 playlist（此后刷新再也回不去）；视图恢复也不得散在 `MusicViewSeg` 这类子组件 effect 里（子先父后执行，落点变成依赖组件树顺序的隐式行为）；
 - **视图落点的三层来源**（优先级从高到低）：Cookie（SSR 首帧）＞ localStorage（挂载回落，仅当服务端没读到 Cookie）＞ 默认「发现歌曲」。Cookie 被禁用（隐私模式）时退化为「先渲默认、挂载后再跳」的一帧闪烁，功能不受影响；`/music` 因读 Cookie 改为按需渲染（不再静态预渲染），这是「刷新零闪烁」的代价；
 - **不写负缓存**：歌词双通道皆空说明源不支持或暂时失败，不落盘，下次仍可重试；
-- **个人行为明细只留本机**：列表快照 / 渠道偏好 / 最近搜索这几项都落在 localStorage，不进 Turso（§7.5）——音乐页是匿名公开页，没有账号体系可供归属，要做跨设备同步须先有账号；
+- **个人行为明细只留本机**：列表快照 / 渠道偏好 / 最近搜索 / 个人收藏这几项都落在 localStorage，不进 Turso（§7.5）——音乐页是匿名公开页，没有账号体系可供归属，要做跨设备同步须先有账号；
+- **收藏的内存态是权威、磁盘只是快照**：与本节的搜索历史刻意相反——搜索历史写不进就当没有（只是输入便利），收藏写不进（配额 / 隐私模式）**不回滚内存**，只置 `persistFailed` 提示「刷新后会丢失」。用户显式攒下的资产不能静默蒸发；
+- **收藏队列与搜索队列各自独立**：`list`（搜索结果 / 链接解析产物）与 `favQueue`（「我的收藏」页点播时灌入，取自面板当前可见的那一份）是两份互不覆盖的队列，`queueOrigin` 只负责告诉引擎此刻跟哪一份（引擎的上一首/下一首、翻页、队内换源候选、当前下标全按它算）。各自页面点歌默认就播自己那一份：收藏页点播不写 `list`、不动翻页进度、也不切视图，播放列表页点播也不动 `favQueue`——两边来回切，各自还停在上次的队列上；
+- **收藏队列不落播放列表快照**：`queueOrigin="favorites"` 时跳过 `writePlaylistSnapshot`——收藏队列既不是一次搜索会话（落盘会挤掉用户真正的搜索快照），本身又会随收藏增删而过期；`runSearch` / `runResolve` 会把出身归还 `search`；
+- **收藏的水合入口唯一**：`hydrateFavorites()` 只能挂在 MusicExplorer 的挂载恢复 effect 里。下放到 `FavoritesPanel` 会在首屏停在「发现歌曲」时永不执行（该面板不挂载 → 结果行与底栏的星永远不亮）；下放到 `MusicViewSeg` 这类子组件会因「子先父后」变成依赖组件树顺序的隐式行为（与本节视图恢复踩过的坑同源）。`favorites-store` 的服务端快照恒为「空 + 未水合」，`toggleFavoriteItem` 还带一次兜底补读盘，避免以空列表为基准覆盖磁盘已有收藏；
 - 本地缓存**不替代**服务端层①②③④，只补首帧与个人偏好。
 
 ### 7.5 服务端持久化（Turso）适用边界

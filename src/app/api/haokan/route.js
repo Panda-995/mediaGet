@@ -1,12 +1,14 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { DEFAULT_MOBILE_UA } from "@/lib/default-mobile-ua";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 async function parseVideoId(videoId) {
   const reqUrl = `https://haokan.baidu.com/v?_format=json&vid=${videoId}`;
-  const res = await fetch(reqUrl, {
+  const res = await fetchWithTimeout(reqUrl, {
     headers: { "User-Agent": DEFAULT_MOBILE_UA },
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   const json = await res.json();
   if (json.errno !== 0) {

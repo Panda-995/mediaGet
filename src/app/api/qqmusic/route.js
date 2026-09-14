@@ -1,3 +1,4 @@
+import { UA_CHROME_WIN126 } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
 import { parseBySongIds } from "@/lib/qqmusic-id";
@@ -7,7 +8,7 @@ export const runtime = "nodejs";
 
 const REQUEST_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    UA_CHROME_WIN126,
   Referer: "https://y.qq.com/",
   Origin: "https://y.qq.com",
 };

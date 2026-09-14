@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { Check, ChevronDown, Loader2 } from "lucide-react";
-import { BR_GROUP_LABEL, type BrOption } from "@/components/music/types";
+import { BR_GROUP_LABEL, type BrOption } from "@/types/music";
 import { cn } from "@/lib/utils";
 
 export interface BrPickerProps {

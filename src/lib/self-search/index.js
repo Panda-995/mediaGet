@@ -89,8 +89,11 @@ export async function selfSearch(source, keyword, page, limit, searchFlags) {
 /**
  * 判断某源搜索结果是否还有下一页。
  * 平台带 total（网易/酷我/腾讯等）时按 total 精确算；缺失时按“回满整页且未到上限”兜底。
+ * ⚠️ pageMax 对两种口径都生效：部分源的 total 是“全库命中量”而非可翻页深度
+ * （实测腾讯《晴天》total=647083），只看 total 会让 hasMore 永远为 true → 前端翻页没有终点。
  */
 export function hasSelfSearchNextPage({ page, limit, read, total, pageMax = SELF_SEARCH_PAGE_MAX }) {
+  if (page >= pageMax) return false;
   if (Number(total) > 0) return page * limit < Number(total);
-  return read > 0 && read >= limit && page < pageMax;
+  return read > 0 && read >= limit;
 }

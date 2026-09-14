@@ -13,7 +13,7 @@
  * 与播放引擎的关系：只读快照 + 命令上行，不持有任何播放状态；所有系统按键命令都转发给
  * `use-player-engine` 暴露的 togglePlay / playPrev / playNext / seek。
  */
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 import { brandArtworkFor } from "@/components/media-session/brand-artwork";
 import { pngArtwork, titleLine, useNowPlaying } from "@/components/media-session/use-now-playing";
 import { platformBrandFor } from "./platform-brand";

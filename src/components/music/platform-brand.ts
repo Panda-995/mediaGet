@@ -2,14 +2,14 @@
  * 音乐平台品牌元信息「单一数据源」：展示名 / 强调色 / `public/logos` 下的品牌 SVG。
  *
  * 汇总来源（避免多处重复维护）：
- * - 内置 GD 聚合源与自研直连搜索源：`music/types` 的 SEARCH_SOURCES / SELF_SEARCH_SOURCES；
+ * - 内置 GD 聚合源与自研直连搜索源：`@/types/music` 的 SEARCH_SOURCES / SELF_SEARCH_SOURCES；
  * - 链接解析专属平台（如 tencent）：`source-meta` 的 RESOLVE_EXTRA_META。
  *
  * 消费方：
  * - `platform-icons/index.tsx`（页面内联图标，`<img>` 直接引用 SVG）；
  * - `use-media-session.ts`（系统媒体控件封面 —— 系统控件不渲染 SVG，需据此栅格化/回退色块）。
  */
-import { SEARCH_SOURCES, SELF_SEARCH_SOURCES } from "./types";
+import { SEARCH_SOURCES, SELF_SEARCH_SOURCES } from "@/types/music";
 import { RESOLVE_EXTRA_META } from "./source-meta";
 
 /**

@@ -6,16 +6,21 @@
  *
  * - 小红书 xhscdn 图床：fetch 时带 Referer: https://www.xiaohongshu.com/
  * - 其他图床：直接 fetch（不强制 Referer，避免误伤）
- * - 内存 LRU 缓存 6 小时（图床 URL 不变，重复请求免重复 fetch）
+ * - 内存 LRU 缓存 6 小时（图床 URL 不变，重复请求免重复 fetch），上限 500 条
  * - 10MB 上限保护
  * - 透传 Content-Type，加 Cache-Control: public, max-age=21600
+ *
+ * 安全：目标 URL 由查询参数决定，入口统一走 lib/proxy-guard.js
+ * （IP 黑名单 + 限流 + SSRF 白名单，后者带 PROXY_SSRF_STRICT 灰度开关）。
  */
+import { UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
-import { isBlockedIP, getClientIP, logger } from "@/lib/api-utils";
+import { createTtlCache, getClientIP } from "@/lib/api-utils";
+import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
 
-const cache = new Map();
-const CACHE_TTL_MS = 6 * 60 * 60 * 1000;
+// 有界 TTL 缓存：此前是无上限 Map，配合「url 完全可控 + 无限流」可被撑爆内存
+const cache = createTtlCache({ max: 500, ttlMs: 6 * 60 * 60 * 1000 });
 const MAX_BYTES = 10 * 1024 * 1024;
 
 function isXhsHost(hostname) {
@@ -50,13 +55,10 @@ function refererFor(hostname) {
 }
 
 export async function GET(request) {
-  // IP 黑名单：图片代理返回二进制图片，无法套用解析接口的 JSON 蜜罐，
-  // 此处对黑名单 IP 保持 403（图片代理只是前端加载资源的通道，不承载解析宣传）。
+  // IP 黑名单 + 限流（代理端点独立配额，见 lib/proxy-guard.js）
+  const guard = guardProxyRequest(request, "image");
+  if (guard) return guard;
   const clientIP = getClientIP(request);
-  if (isBlockedIP(clientIP)) {
-    logger.warn(`黑名单 IP 被拦截(image): ip=${clientIP}`);
-    return new Response("Forbidden", { status: 403 });
-  }
 
   const { searchParams } = new URL(request.url);
   const encoded = searchParams.get("url");
@@ -74,13 +76,21 @@ export async function GET(request) {
   if (!/^https?:$/.test(candidates[0].protocol)) {
     return new Response("Only http(s) allowed", { status: 400 });
   }
+  // SSRF：主 URL 指向内网/云元数据地址时直接拒绝
+  // （灰度：PROXY_SSRF_STRICT 未开启时只记录不拦截，见 lib/proxy-guard.js）
+  const primaryBlocked = checkProxyUrl(candidates[0].href, "image", clientIP);
+  if (primaryBlocked) return primaryBlocked;
+
   const fallbackParam = searchParams.get("fallback");
   if (fallbackParam) {
     for (const part of fallbackParam.split(",")) {
       if (!part) continue;
       try {
         const u = new URL(decodeURIComponent(part));
-        if (/^https?:$/.test(u.protocol)) candidates.push(u);
+        if (!/^https?:$/.test(u.protocol)) continue;
+        // 备选同样过 SSRF：只有能进入候选列表的 URL 才会被真正 fetch
+        if (checkProxyUrl(u.href, "image", clientIP)) continue;
+        candidates.push(u);
       } catch {
         // 忽略非法备选
       }
@@ -89,7 +99,7 @@ export async function GET(request) {
 
   const cacheKey = candidates[0].href;
   const cached = cache.get(cacheKey);
-  if (cached && cached.expires > Date.now()) {
+  if (cached) {
     return new Response(cached.buffer, {
       headers: {
         "Content-Type": cached.contentType,
@@ -102,7 +112,7 @@ export async function GET(request) {
   for (const candidate of candidates) {
     const headers = {
       "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36 Edg/129.0.0.0",
+        UA_EDGE_WIN129,
       Accept: "image/avif,image/webp,image/png,image/jpeg,image/*;q=0.8",
     };
     // 图床防盗链：按当前候选的域名决定 Referer
@@ -131,11 +141,7 @@ export async function GET(request) {
     }
 
     const contentType = upstream.headers.get("content-type") || "image/jpeg";
-    cache.set(cacheKey, {
-      buffer,
-      contentType,
-      expires: Date.now() + CACHE_TTL_MS,
-    });
+    cache.set(cacheKey, { buffer, contentType });
 
     return new Response(buffer, {
       headers: {

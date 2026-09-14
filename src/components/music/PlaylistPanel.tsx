@@ -7,11 +7,12 @@ import {
   musicLineMeta,
   type DirectData,
   type SearchItem,
-} from "@/lib/music-client";
-import type { SearchSourceKey } from "@/components/music/types";
+} from "@/lib/client/music-client";
+import type { SearchSourceKey } from "@/types/music";
 import { PlatformIcon } from "@/components/music/platform-icons";
 import { sourceMetaFor, type SearchChip } from "./source-meta";
-import { EqBars } from "./eq-bars";
+import { EqBars } from "./EqBars";
+import FavoriteButton from "./FavoriteButton";
 
 export interface PlaylistPanelProps {
   /** 挂载期本地恢复（播放列表快照）是否尚未落定：true 时先显示占位，避免刷新后
@@ -38,6 +39,8 @@ export interface PlaylistPanelProps {
   aggMode?: boolean;
   /** 空结果时的附加说明（聚合搜索失败源等），非空才展示 */
   emptyHint?: string;
+  /** 行内收藏按钮动作完成回调（父层弹轻提示）；不传则静默 */
+  onFavoriteToggled?: (result: { added: boolean; persistFailed: boolean }) => void;
 }
 
 /**
@@ -64,6 +67,7 @@ export default function PlaylistPanel({
   handleListScroll,
   aggMode = false,
   emptyHint = "",
+  onFavoriteToggled,
 }: PlaylistPanelProps) {
   if (searching) {
     return (
@@ -140,7 +144,7 @@ export default function PlaylistPanel({
         className="mp-scroll mp-list-scroll"
         ref={listTopRef}
         onScroll={handleListScroll}>
-        <div className="mp-list">
+        <div className="mp-tracklist">
         {list.map((item, idx) => {
           const isCurrent = currentIndex === idx;
           // 首次取直链（尚无 direct）才展示行内加载动画；
@@ -183,6 +187,8 @@ export default function PlaylistPanel({
                     <Play />
                   </span>
                 )}
+                {/* 收藏钮紧跟悬停播放钮，与歌名同处一列：图标是行的动作，不该飘到列尾 */}
+                <FavoriteButton item={item} onToggled={onFavoriteToggled} />
               </span>
               <span className="mp-cell mp-cell-artist" title={artist}>
                 {artist}

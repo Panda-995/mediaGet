@@ -1,14 +1,16 @@
 import { createApiHandler } from "@/lib/api-middleware";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 async function parseVideoId(videoId) {
   const reqUrl = `https://kg.qq.com/node/play?s=${videoId}`;
-  const res = await fetch(reqUrl, {
+  const res = await fetchWithTimeout(reqUrl, {
     headers: {
       "User-Agent":
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/104.0.5112.102 Safari/537.36 Edg/104.0.1293.70",
     },
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   const html = await res.text();
   const m = html.match(/window\.__DATA__\s*=\s*(.*?);/s);

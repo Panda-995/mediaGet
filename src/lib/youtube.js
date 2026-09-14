@@ -30,10 +30,10 @@
  * 不写入缓存（见 api-middleware），解析源恢复后用户重试即可重新获得下载直链。
  */
 
+import { UA_CHROME_WIN126 } from "@/lib/http";
 import { logger } from "@/lib/api-utils";
 
-const UA =
-  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
+const UA = UA_CHROME_WIN126;
 
 const REQUEST_TIMEOUT_MS = Number(process.env.YOUTUBE_SOURCE_TIMEOUT_MS || 6000);
 

@@ -2,6 +2,7 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { ApiResponse, ParseData } from "@/types/api";
+import { formatCount } from "@/lib/format";
 import VideoPosterCard from "./VideoPosterCard";
 import ParseInfoPanel from "./ParseInfoPanel";
 import CaptionBox from "./CaptionBox";
@@ -35,11 +36,6 @@ export default function XhsVideo({ data }: XhsVideoProps) {
   const isImageType = xhsData.type === "image";
   const images = xhsData.images?.filter(Boolean) || [];
 
-  // 数字缩写：>1万 → x.x万 / xx万，其余千分位
-  const formatCount = (n: number) =>
-    n >= 10000
-      ? `${(n / 10000).toFixed(n >= 1000000 ? 0 : 1)}万`
-      : n.toLocaleString("zh-CN");
 
   // 博主主页公开信息徽标：关注 / 粉丝 / 获赞与收藏（小红书主页口径，缺失自动隐藏）
   const authorBadges: { label: string; value?: number }[] = [

@@ -1,6 +1,7 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { DEFAULT_MOBILE_UA } from "@/lib/default-mobile-ua";
 import { getRedirectLocation } from "@/lib/redirect-location";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -615,13 +616,14 @@ async function parseViaSyndication(tweetId) {
 
   let res;
   try {
-    res = await fetch(apiUrl, {
+    res = await fetchWithTimeout(apiUrl, {
       headers: {
         "User-Agent":
           "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
         Accept: "application/json",
         Referer: "https://platform.twitter.com/",
       },
+      timeoutMs: TIMEOUT.DEFAULT,
     });
   } catch {
     return { code: 502, msg: "Twitter 接口请求失败，请稍后重试" };

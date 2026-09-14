@@ -1,0 +1,490 @@
+/* music.css 片段 4/8 —— 底部播放条：停靠区与收起 / 唤起（.is-bar-collapsed）、进度条与悬停加粗、
+   时长气泡、单行实时歌词、音量条与音量气泡、小屏适配。
+   片段顺序即层叠顺序，不得随意调换（见 music-base.css 头部说明）。 */
+
+/* ---------- 底部播放条（停靠式收起 / 唤起，见 .is-bar-collapsed） ---------- */
+/* 停靠区：包住播放条与收起态把手，只负责「悬停挂起自动收起」的命中范围，不作任何视觉呈现。
+   高度由内容（播放条）撑开，随其一起收缩；把手绝对定位不占位，所以收起时本区高度为 0。
+   指针进入其任一子节点即算进入本区（pointerenter 按 DOM 树判定），只有真正离开整块才算移开——
+   这样条内控件之间移动、以及把手收起后改由底栏承接光标，都不会被误判成「鼠标移开」 */
+.mp-bar-dock {
+  flex: none;
+}
+
+/* 高度由 --mp-bar-h 驱动：展开 = 真实条高（桌面 62px / 移动 64px + 底部安全区），
+   收起 = 0。收起 / 唤起的过渡本身就是「抽屉」动画——盒子顶边随高度收缩下移，
+   条内内容随之滑出视口底部，裁切交给 .mp-app 的 overflow:hidden。
+   注意：这里绝不能加 overflow:hidden，否则挂在 .mp-pbar 上方 32px 的进度气泡会被裁掉。 */
+.mp-player {
+  flex: none;
+  height: var(--mp-bar-h);
+  border-top: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--background) 80%, transparent);
+  backdrop-filter: saturate(180%) blur(24px);
+  -webkit-backdrop-filter: saturate(180%) blur(24px);
+  z-index: 20;
+  visibility: visible;
+  transition: height 0.3s var(--mp-bar-ease), padding-bottom 0.3s var(--mp-bar-ease),
+    border-top-color 0.3s ease, visibility 0s linear 0s;
+}
+/* 收起态：高边线淡掉；visibility 延后到动画结束才置 hidden，
+   这样条内控件彻底退出可达性树与命中测试，而收起过程中内容仍完整可见（随条滑出） */
+.mp-app.is-bar-collapsed .mp-player {
+  border-top-color: transparent;
+  pointer-events: none;
+  visibility: hidden;
+  transition-delay: 0s, 0s, 0s, 0.3s;
+}
+
+/* 收起态的底部把手：整条底边都是唤起热区（16px 高、绝对定位不占布局），
+   视觉只有一条居中细指示条——静默收起但不至于让人找不到唤起入口 */
+.mp-bar-handle {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 21;
+  height: 16px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.24s ease, visibility 0s linear 0.24s;
+}
+/* 仅收起态可交互：展开态的条已占满底部，把手既不该被点到也不该被 Tab 到 */
+.mp-bar-handle.is-on {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 0.24s ease 0.14s, visibility 0s linear 0.14s;
+}
+.mp-bar-handle::after {
+  content: "";
+  width: 40px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--mp-line);
+  transition: width 0.2s ease, background 0.2s ease;
+}
+.mp-bar-handle:hover::after,
+.mp-bar-handle:focus-visible::after {
+  width: 52px;
+  background: var(--mp-primary);
+}
+.mp-bar-handle:focus-visible { outline: none; }
+.mp-progress {
+  display: block;
+  width: 100%;
+  height: 3px;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+  /* 让原生滑块（轨道 + 拇指）画在 ::before 加粗层之上；
+     否则底色层会盖住滑块本身，thumb 看起来被"切掉一半"。 */
+  position: relative;
+  z-index: 1;
+}
+.mp-progress::-webkit-slider-runnable-track { height: 3px; border-radius: 999px; background: var(--mp-prog, var(--mp-line)); }
+.mp-progress::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--mp-primary);
+  margin-top: -4px;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.3);
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.mp-player:hover .mp-progress::-webkit-slider-thumb,
+.mp-progress:active::-webkit-slider-thumb { opacity: 1; }
+.mp-progress::-moz-range-track { height: 3px; border-radius: 999px; background: var(--mp-prog, var(--mp-line)); }
+.mp-progress::-moz-range-thumb {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--mp-primary);
+  opacity: 0;
+}
+.mp-player:hover .mp-progress::-moz-range-thumb { opacity: 1; }
+
+/* 鼠标悬停进度条：改用 .mp-pbar::before 独立绘制层做对称加粗。
+   原生 range 内部伪元素的对齐行为在不同浏览器里不一致：负 margin-top 能移动
+   input 盒模型，但轨道/拇指仍以原顶边为基准向下扩，导致视觉只往下长。
+   这里换成我们完全可控的 ::before 层：以 3px 细线中心为 transform-origin
+   做 scaleY（3 → 7），上下两端等高外扩、中心点不动；.mp-pbar 固定 3px，
+   底栏行高不受影响；pointer-events:none 不抢命中区，input 仍以 z:1 压在层上
+   保证 thumb 显示在加粗层之上。 */
+.mp-pbar::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  border-radius: 999px;
+  background: var(--mp-prog, var(--mp-line));
+  transform-origin: center;
+  transform: scaleY(1);
+  transition: transform 0.12s ease;
+  pointer-events: none;
+}
+.mp-pbar:hover::before,
+.mp-pbar:active::before,
+.mp-pbar.is-hot::before { transform: scaleY(2.3334); }
+
+/* .mp-pbar 固定为细线高度：加粗走 ::before 独立层，不改动底栏行高 */
+.mp-pbar { position: relative; height: 3px; }
+
+/* 未在播放（未选曲 / 会话被清空）时进度条整体不显示，也不参与悬停加粗与拖动：
+   轨道、滑块、时间气泡、命中层都在本容器子树里，visibility 一并收掉（也从可达性树移除）。
+   只隐藏不拆掉——容器仍是 3px 占位，播放条高度维持「1px 边框 + 3px 进度条 + 主行」，
+   底栏主行位置与 5 秒收起动画的高度构成都不变，只是不再露出那条空轨道 */
+.mp-pbar.is-idle {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* 进度条命中层：容器虽仅 3px，但鼠标命中高度扩到「悬停加粗后」的区域——
+   进入加粗后线条会占据的范围即触发 :hover 加粗与时间气泡，无需精准压在
+   原始 3px 细线上。层以 3px 细线为轴上下等距悬浮（z 盖过原生 range），
+   点击/拖动 seek 由 JS 换算横向坐标，键盘调节仍走原生 input。 */
+.mp-pbar-hit {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 9px;
+  transform: translateY(-50%);
+  cursor: pointer;
+  touch-action: none;
+}
+
+/* 进度条悬停时显示「当前播放 / 总时长」气泡
+   .mp-prog-tip 为 0 宽“锚点列”，其 left 由 JS 精确落在滑块圆心；
+   箭头与气泡均以此为参照，保证箭头尖始终对准圆心，气泡过宽时向两侧让位。 */
+.mp-prog-tip {
+  position: absolute;
+  top: -32px;
+  bottom: 0;
+  left: 0;
+  width: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.mp-prog-tip-box {
+  position: absolute;
+  left: 0;
+  bottom: 6px;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: rgba(18, 18, 24, 0.82);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+}
+.mp-prog-tip-arrow {
+  position: absolute;
+  left: 0;
+  bottom: 1.5px;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid rgba(18, 18, 24, 0.82);
+}
+
+/* 气泡内：已播时长加重、分隔符弱化、总时长半透明 */
+.mp-prog-tip-cur { font-weight: 600; }
+.mp-prog-tip-sep { margin: 0 4px; opacity: 0.55; }
+.mp-prog-tip-dur { opacity: 0.72; }
+
+.mp-prow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+  align-items: center;
+  gap: 14px;
+  height: 58px;
+  padding: 0 16px;
+}
+.mp-ptrack { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.mp-ptrack .mp-thumb {
+  width: 42px;
+  height: 42px;
+  border-radius: 8px;
+  overflow: hidden;
+  flex: none;
+  background: var(--glass-3);
+  box-shadow: 0 5px 12px color-mix(in srgb, var(--text-primary) 15%, transparent);
+}
+.mp-ptrack .mp-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.mp-ptrack .mp-thumb.ph { display: grid; place-items: center; color: var(--text-muted); }
+.mp-ptrack .mp-thumb.ph svg { width: 17px; height: 17px; opacity: 0.6; }
+.mp-ptrack .c { min-width: 0; }
+.mp-ptrack .c .t {
+  font-size: 13.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.mp-ptrack .c .a {
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+/* 底部栏单行实时歌词（顶替歌手行，不改变底栏高度）：
+   始终与上方标题保持同一左边缘（不随文本长短居中）；
+   超长且正在播放时无缝跑马灯；超长但暂停时退化为省略号。 */
+.mp-lymq {
+  position: relative;
+  min-width: 0;
+  font-size: 12px;
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-align: left;
+}
+.mp-lymq .mp-lymq-txt {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mp-lymq .mp-lymq-track {
+  display: inline-flex;
+  white-space: nowrap;
+  will-change: transform;
+  animation: mp-lymq-scroll 12s linear infinite;
+}
+.mp-lymq .mp-lymq-copy { padding-right: 44px; }
+.mp-lymq .mp-lymq-probe {
+  position: absolute;
+  left: 0;
+  top: 0;
+  visibility: hidden;
+  pointer-events: none;
+  white-space: nowrap;
+}
+@keyframes mp-lymq-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+.mp-ptrack .mp-like { margin-left: 2px; flex: none; width: 28px; height: 28px; }
+.mp-ptrack .mp-like svg { width: 15px; height: 15px; }
+
+.mp-ctrls { display: flex; align-items: center; gap: 2px; }
+.mp-ctrls .mp-play {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: none;
+  display: grid;
+  place-items: center;
+  background: var(--mp-primary);
+  color: #fff;
+  cursor: pointer;
+  box-shadow: 0 4px 14px color-mix(in srgb, var(--mp-primary) 34%, transparent);
+  transition: filter 0.2s, transform 0.1s;
+  margin: 0 4px;
+}
+.mp-ctrls .mp-play:hover { filter: brightness(1.07); }
+.mp-ctrls .mp-play:active { transform: scale(0.94); }
+.mp-ctrls .mp-play:disabled { opacity: 0.4; cursor: not-allowed; box-shadow: none; }
+.mp-ctrls .mp-play svg { width: 17px; height: 17px; }
+.mp-ctrls .mp-icon-btn svg { width: 19px; height: 19px; }
+
+.mp-ptime { text-align: right; display: flex; align-items: center; justify-content: flex-end; gap: 12px; min-width: 0; }
+.mp-ptime .mp-volpct {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  min-width: 32px;
+  text-align: right;
+  cursor: default;
+}
+.mp-vol { display: flex; align-items: center; gap: 5px; margin: 0 8px; }
+.mp-vol svg { width: 17px; height: 17px; color: var(--text-secondary); cursor: pointer; }
+/* 音量条容器：定位参照 + 悬停热区。
+   原生 range 只有 3px 高，鼠标很难精确停在细线上；外面套一层 12px 定高容器后，
+   容器自身的盒就是命中范围（悬停或按住即显示音量气泡），滑杆在其中垂直居中、
+   位置不变——容器高出的部分透明，只是把热区上下各扩了 4.5px */
+.mp-voltrack {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 12px;
+}
+.mp-vol input {
+  width: 74px;
+  appearance: none;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 999px;
+  outline: none;
+  cursor: pointer;
+  background: transparent;
+}
+.mp-vol input::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--mp-prog, var(--mp-line));
+}
+.mp-vol input::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: var(--mp-prog, var(--mp-line));
+}
+.mp-vol input::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 11px; height: 11px;
+  border-radius: 50%;
+  background: #fff;
+  border: 2px solid var(--mp-primary);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  /* 相对 3px 高的轨道垂直居中：(11 - 3) / 2 */
+  margin-top: -4px;
+}
+.mp-vol input::-moz-range-thumb {
+  width: 11px; height: 11px; border-radius: 50%;
+  background: #fff; border: 2px solid var(--mp-primary);
+}
+/* 音量气泡：悬停 / 按住拖动 / 键盘聚焦时浮出，显示当前音量（静音时显示「已静音」）。
+   与进度气泡同款深色气泡 + 下箭头，但位置不依赖 JS 测量：
+   left 由音量比例（行内 --mp-vol-ratio，unitless 0~1，静音按 0）换算到滑块圆心——
+   圆点的横向行程是「轨道宽 - 圆点宽」，两端各内缩半个圆点，故
+   5.5px + (74px - 11px) * ratio；两个数字分别对应上方 input 宽度与圆点直径，
+   改滑块尺寸时一并改这里。
+   bottom:100% 让气泡停在滑杆正上方：3px 进度条与主行之间正好有 21px 空档，
+   气泡(≈23px) + 箭头(5px) 落在其中，既不压住进度条，也不会越出底栏被裁 */
+.mp-vol-tip {
+  position: absolute;
+  bottom: 100%;
+  left: calc(5.5px + (74px - 11px) * var(--mp-vol-ratio, 0));
+  z-index: 6;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 7px;
+  background: rgba(18, 18, 24, 0.82);
+  color: #fff;
+  font-size: 11.5px;
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.28);
+  pointer-events: none;
+  opacity: 0;
+  visibility: hidden;
+  transition: opacity 0.14s ease, visibility 0s linear 0.14s;
+}
+/* 指向滑块的下箭头，挂在气泡下沿 */
+.mp-vol-tip::after {
+  content: "";
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid rgba(18, 18, 24, 0.82);
+}
+/* 悬停、按住（拖动时指针可能滑出 12px 热区，:active 仍挂在本容器上）、
+   键盘聚焦（:focus-visible 只认键盘，避免点一下后气泡一直赖着不走） */
+.mp-voltrack:hover .mp-vol-tip,
+.mp-voltrack:active .mp-vol-tip,
+.mp-voltrack:has(input:focus-visible) .mp-vol-tip {
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.14s ease, visibility 0s;
+}
+/* 小屏适配 */
+@media (max-width: 1080px) {
+  :root {
+    /* 收起专辑列：整条轨道连同单元格一起去掉，否则后面的单元格会顶到前一条轨道上 */
+    --mp-cols: var(--mp-col-idx) var(--mp-col-title) var(--mp-col-artist) var(--mp-col-src) var(--mp-col-line);
+    --mp-cols-favs: var(--mp-col-idx) var(--mp-col-title) var(--mp-col-artist) var(--mp-col-src);
+  }
+  .mp-cell-album,
+  .mp-colhead .mp-ch-album { display: none; }
+}
+@media (max-width: 860px) {
+  .mp-side { width: 250px; }
+  .mp-artbox { max-width: 170px; }
+}
+@media (max-width: 700px) {
+  .mp-app { height: auto; min-height: calc(100vh - 57px); overflow: visible; }
+  .mp-body { flex-direction: column; overflow: visible; }
+  .mp-player { position: sticky; bottom: 0; }
+  .mp-main { overflow: visible; flex: none; }
+  .mp-tools { padding: 8px 12px; }
+  .mp-scroll { padding: 14px 12px 18px; }
+  .mp-list-head { padding: 0 12px; }
+  /* 此处线路列已整列隐藏，两套模板就此重合 */
+  :root {
+    --mp-cols: 28px minmax(0, 1fr) 92px;
+    --mp-cols-favs: 28px minmax(0, 1fr) 92px;
+  }
+  .mp-colhead,
+  .mp-row { gap: 8px; padding-left: 8px; padding-right: 8px; }
+  .mp-colhead .mp-ch-artist { display: none; }
+  .mp-row .mp-cell-artist { display: none; }
+  .mp-colhead .mp-ch-line,
+  .mp-cell-line { display: none; }
+  /* 收藏面板工具条：左右留白同步收窄（与 .mp-scroll / .mp-list-head 一致），
+     操作区整行下移——筛选框与两个按钮横排会挤爆 */
+  .mp-fav-head { padding: 2px 12px 12px; }
+  .mp-fav-acts { width: 100%; margin-left: 0; }
+  .mp-fav-filter { flex: 1; width: auto; min-width: 0; }
+  /* 移动端隐藏顶部的「正在播放」卡片：当前曲目/进度统一由底部迷你播放条呈现，
+     列表区直接顶格铺满，不再保留桌面端挪上来的侧栏形态 */
+  .mp-side { display: none; }
+
+  /* 底部迷你播放条（移动端）：
+     - 吸收 iOS 底部安全区
+     - 单行布局：封面+曲目/滚动歌词 在左，右侧只保留 播放/下一首
+     - 上一首 / 单曲循环 / 音质切换 / 时间音量 收进「正在播放」整页 */
+  .mp-player {
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    background: color-mix(in srgb, var(--background) 96%, transparent);
+    -webkit-backdrop-filter: saturate(160%) blur(20px);
+    backdrop-filter: saturate(160%) blur(20px);
+  }
+  /* 收起时必须连通底部安全区一起让出：border-box 下 padding 会自己撑出残高，
+     否则刘海屏上收不干净（残留 ≈ 安全区高度） */
+  .mp-app.is-bar-collapsed .mp-player { padding-bottom: 0; }
+  /* 移动端底栏是 sticky 贴视口底部的，而把手按 .mp-app 绝对定位会落到页面底部、可能被滚出屏幕，
+     这里改 fixed 贴视口底边：收起后随时点得到；展开态把手自身是隐藏的，不会挡住底栏控件 */
+  .mp-bar-handle { position: fixed; }
+  .mp-prow {
+    grid-template-columns: minmax(0, 1fr) auto;
+    height: 60px;
+    padding: 0 10px;
+    gap: 6px;
+  }
+  .mp-player .mp-ctrls { gap: 4px; }
+  .mp-player .mp-ctrls > :first-child { display: none; } /* 上一首 */
+  .mp-player .mp-ctrls > :nth-child(4) { display: none; } /* 单曲循环 */
+  .mp-player   .mp-brp { display: none; } /* 音质切换 */
+  /* 移动端播放条更高：1px 边框 + 3px 进度条 + 60px 主行，再叠底部安全区 */
+  .mp-app { --mp-bar-h: calc(64px + env(safe-area-inset-bottom, 0px)); --mp-float-gap: 14px; }
+  .mp-ptime { display: none; }
+  .mp-hero h1 { font-size: 24px; }
+}
+

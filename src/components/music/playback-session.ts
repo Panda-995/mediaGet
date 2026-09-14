@@ -8,7 +8,7 @@
  * - 会话超过 TTL 视为过期——隔天再进来时旧队列大概率已无意义，从头开始更合理；
  * - 恢复是「暂停态定位」而非自动起播：浏览器自动播放策略会拦截，且不该突然出声。
  */
-import type { SearchItem } from "@/lib/music-client";
+import type { SearchItem } from "@/lib/client/music-client";
 
 export const PLAYBACK_SESSION_KEY = "mp-playback-session";
 /** 会话有效期：一天。超期丢弃，避免恢复出与当前上下文无关的陈旧曲目 */

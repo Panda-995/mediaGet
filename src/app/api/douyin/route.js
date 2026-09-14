@@ -1,3 +1,4 @@
+import { UA_IOS_SAFARI_16_6 } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger, beijingNow } from "@/lib/api-utils";
 import { douyinPublicFallback } from "@/lib/douyinFallback";
@@ -24,7 +25,7 @@ export const runtime = "nodejs";
 // 最小化请求头 — 过多的 sec-ch-ua / desktop 头与 mobile UA 混用会触发抖音反爬
 const MOBILE_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+    UA_IOS_SAFARI_16_6,
   Accept:
     "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "zh-CN,zh;q=0.9",

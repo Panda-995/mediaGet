@@ -12,6 +12,7 @@
  * 已被 SSA 反爬拦截，不采用。）
  */
 import { SelfSearchError, SELF_SEARCH_FAILURE } from "./errors";
+import { searchWithRetry } from "./retry";
 import { decodeName, fetchJson, upgradeToHttps } from "./request";
 
 export function buildKugouSearchUrl(keyword, page, limit) {
@@ -69,23 +70,10 @@ export function parseKugouSearch(json) {
 
 /** 酷狗搜索编排：最多重试 2 次，网络/结构异常统一归类 sources-down */
 export async function searchKugou(keyword, page, limit) {
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const json = await fetchJson(buildKugouSearchUrl(keyword, page, limit));
-      return parseKugouSearch(json);
-    } catch (error) {
-      lastError = error;
-      if (error instanceof SelfSearchError) {
-        if (attempt === 1) throw error;
-        continue;
-      }
-    }
-  }
-  throw new SelfSearchError(
-    SELF_SEARCH_FAILURE.SOURCES_DOWN,
-    `酷狗搜索暂不可用${lastError ? `：${lastError.message}` : ""}`
-  );
+  return searchWithRetry(async () => {
+    const json = await fetchJson(buildKugouSearchUrl(keyword, page, limit));
+    return parseKugouSearch(json);
+  }, "酷狗搜索暂不可用");
 }
 
 // —— 酷狗官方试听直链（cmd=playInfo：hash → 128k mp3 直链 + 歌曲元数据） ——
@@ -180,21 +168,8 @@ export function parseKugouPlayInfo(json) {
 
 /** 酷狗取链编排：最多重试 2 次；VIP/下架/结构异常直接归类抛错 */
 export async function getKugouPlayUrl(hash) {
-  let lastError;
-  for (let attempt = 0; attempt < 2; attempt++) {
-    try {
-      const json = await fetchJson(buildKugouPlayUrl(hash));
-      return parseKugouPlayInfo(json);
-    } catch (error) {
-      lastError = error;
-      if (error instanceof SelfSearchError) {
-        if (attempt === 1) throw error;
-        continue;
-      }
-    }
-  }
-  throw new SelfSearchError(
-    SELF_SEARCH_FAILURE.SOURCES_DOWN,
-    `酷狗取链暂不可用${lastError ? `：${lastError.message}` : ""}`
-  );
+  return searchWithRetry(async () => {
+    const json = await fetchJson(buildKugouPlayUrl(hash));
+    return parseKugouPlayInfo(json);
+  }, "酷狗取链暂不可用");
 }

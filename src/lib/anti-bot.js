@@ -85,12 +85,16 @@ export const RISK_TYPES = {
  * 通用风控特征分类：依据 HTTP 状态码 + 响应体特征，判断一次上游请求是否被反爬拦截。
  * 各平台路由已有更精确的专属检测（如 douyin-extract.isChallengeHtml）时优先用专属检测；
  * 本工具用于尚未覆盖 / 新增平台的通用兜底。
- * @param {{ status?: number, text?: string, hasCookie?: boolean }} input
+ * @param {{ status?: number, text?: string, hasCookie?: boolean, maxScanLength?: number }} input
+ *   maxScanLength 为特征扫描窗口（字符数，默认 50000）
  * @returns {{ type: string, reasons: string[] }}
  */
-export function classifyRisk({ status, text = "", hasCookie = false } = {}) {
+export function classifyRisk({ status, text = "", hasCookie = false, maxScanLength = 50_000 } = {}) {
   const reasons = [];
-  const body = String(text || "").toLowerCase();
+  // 只扫描前 maxScanLength 字符：风控特征（验证码 / JS 挑战 / 403 文案）都出现在
+  // 页面头部，而平台页面动辄 1MB+。全量 toLowerCase 会复制整份 HTML 再扫 5 遍，
+  // 是纯粹的浪费。截断不影响判定，只减少无意义的扫描。
+  const body = String(text || "").slice(0, maxScanLength).toLowerCase();
   const has = (keywords) => keywords.some((k) => body.includes(k));
 
   if (status === 429 || has(["too many requests", "请求过于频繁", "rate limit"])) {

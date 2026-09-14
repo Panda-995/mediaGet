@@ -20,6 +20,9 @@ import { recordParse } from "@/lib/analytics";
 import { honeypotResponse } from "@/lib/honeypot";
 import { getResultCache, putResultCache, resultStale } from "@/lib/result-cache";
 import { platformFetchLimiter } from "@/lib/anti-bot";
+// 路由域名白名单：由 PLATFORM_INFO 推导（单一真源），此前在本文件另存一份硬编码表，
+// 与平台配置逐渐分叉（见 lib/platforms.ts 的 ROUTE_DOMAIN_MAP 注释）
+import { ROUTE_DOMAIN_MAP } from "@/lib/platforms";
 
 /**
  * 安全的状态码 - 确保在 200-599 范围内
@@ -81,33 +84,8 @@ type ParseFunction = (url: string) => Promise<Record<string, unknown> | null> | 
 // 完成后自动移除，下一次同 URL 请求由缓存层（内存 / 共享结果缓存）兜底。
 const inflightParses = new Map<string, Promise<Record<string, unknown> | null>>();
 
-// 平台专用路由（/api/douyin 等）的域名白名单（route 名 → 域名后缀 + 中文名）。
-// 与 lib/platforms.ts 的 PLATFORM_INFO.domains/shortDomains 对齐（route 名与平台 key 命名
-// 不完全一致，如 /api/xhs→小红书、/api/ppxia→皮皮虾，故在此集中维护一份按 route 名的映射）。
-// 匹配规则：hostname === d || hostname.endsWith("." + d)，短链域名（v.douyin.com 等）
-// 由主域名 douyin.com 的 endsWith 覆盖，无需重复列出。
-const ROUTE_DOMAIN_MAP: Record<string, { name: string; hosts: string[] }> = {
-  douyin: { name: "抖音", hosts: ["douyin.com", "iesdouyin.com", "snssdk.com", "wtturl.cn"] },
-  bilibili: { name: "哔哩哔哩", hosts: ["bilibili.com", "b23.tv"] },
-  xhs: { name: "小红书", hosts: ["xiaohongshu.com", "xhslink.com", "xhslink.cn"] },
-  kuaishou: { name: "快手", hosts: ["kuaishou.com", "kuaishoup.com"] },
-  weibo: { name: "微博", hosts: ["weibo.com", "weibo.cn"] },
-  ppxia: { name: "皮皮虾", hosts: ["pipix.com"] },
-  pipigx: { name: "皮皮搞笑", hosts: ["pipigx.com"] },
-  xigua: { name: "西瓜视频", hosts: ["ixigua.com"] },
-  zuiyou: { name: "最右", hosts: ["izuiyou.com", "xiaochuankeji.com", "xiaochuankeji.cn"] },
-  huya: { name: "虎牙", hosts: ["huya.com"] },
-  acfun: { name: "AcFun", hosts: ["acfun.cn"] },
-  quanminkge: { name: "全民K歌", hosts: ["kg.qq.com", "quanmin.kg.qq.com"] },
-  sixroom: { name: "六间房", hosts: ["6.cn"] },
-  xinpianchang: { name: "新片场", hosts: ["xinpianchang.com"] },
-  haokan: { name: "好看视频", hosts: ["haokan.baidu.com", "haokan.hao123.com"] },
-  twitter: { name: "X (Twitter)", hosts: ["twitter.com", "x.com", "t.co"] },
-  tiktok: { name: "TikTok", hosts: ["tiktok.com", "vm.tiktok.com", "vt.tiktok.com"] },
-  instagram: { name: "Instagram", hosts: ["instagram.com", "instagr.am"] },
-  youtube: { name: "YouTube", hosts: ["youtube.com", "youtu.be", "youtube-nocookie.com"] },
-  qqmusic: { name: "QQ音乐", hosts: ["y.qq.com"] },
-};
+// 平台专用路由（/api/douyin 等）的域名白名单见 lib/platforms.ts 的 ROUTE_DOMAIN_MAP
+// （由 PLATFORM_INFO 推导，本文件不再单独维护）。
 
 // 通用 API 处理函数
 export const createApiHandler = (

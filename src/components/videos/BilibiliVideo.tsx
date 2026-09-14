@@ -2,6 +2,8 @@
 import React, { useState } from "react";
 import Image from "next/image";
 import { ApiResponse, ParsedVideoItem } from "@/types/api";
+import { formatCount } from "@/lib/format";
+import { scrollToElement } from "@/lib/dom";
 import { sanitizeFilename } from "@/utils/filename";
 import VideoPosterCard from "./VideoPosterCard";
 import ParseInfoPanel from "./ParseInfoPanel";
@@ -71,11 +73,6 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
     )}-P${index + 1}-${titlePart}${labelPart}.mp4`;
   };
 
-  // 数字缩写：>1万 → x.x万 / xx万，其余千分位
-  const formatCount = (n: number) =>
-    n >= 10000
-      ? `${(n / 10000).toFixed(n >= 1000000 ? 0 : 1)}万`
-      : n.toLocaleString("zh-CN");
 
   // UP主主页公开信息徽标：关注 / 粉丝 / 获赞（缺失自动隐藏）
   const upBadges: { label: string; value?: number }[] = [
@@ -86,16 +83,11 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
 
   // 播放器下方「下载视频」按钮：滚动定位到下方下载卡中当前分P对应的下载行
   // （多分P时跟随正在播放的分P；找不到目标行时回退到下载卡顶部）
-  const scrollToDownload = (index: number) => {
-    const target = document.getElementById(`bilibili-download-${index}`);
-    if (target) {
-      target.scrollIntoView({ behavior: "smooth", block: "center" });
-    } else {
-      document
-        .getElementById("bilibili-download")
-        ?.scrollIntoView({ behavior: "smooth", block: "start" });
-    }
-  };
+  const scrollToDownload = (index: number) =>
+    scrollToElement(`bilibili-download-${index}`, {
+      fallbackId: "bilibili-download",
+      fallbackBlock: "start",
+    });
 
   return (
     <div className="space-y-5" style={{ touchAction: 'pan-y' }}>

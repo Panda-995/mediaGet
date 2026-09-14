@@ -13,6 +13,7 @@
  */
 
 /** 封面缩略参数尺寸（w × h），网易图床通过 ?param= 控制 */
+import { UA_CHROME_WIN126 } from "@/lib/http";
 export const NETEASE_COVER_SIZE = 300;
 
 export const NETEASE_COVER_URL = "https://music.163.com/api/song/detail";
@@ -20,7 +21,7 @@ export const NETEASE_COVER_URL = "https://music.163.com/api/song/detail";
 /** 服务端请求头（带浏览环境，降低风控概率） */
 export const NETEASE_META_HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36",
+    UA_CHROME_WIN126,
   Accept: "application/json, text/plain, */*",
   Referer: "https://music.163.com/",
 };

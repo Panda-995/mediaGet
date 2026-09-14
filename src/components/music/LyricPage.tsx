@@ -1,18 +1,26 @@
 "use client";
 
+import { memo } from "react";
 import type { CSSProperties, Dispatch, MouseEvent, RefObject, SetStateAction } from "react";
 import { ChevronDown, Disc3, Pause, Play, Repeat, SkipBack, SkipForward, Volume2, VolumeX } from "lucide-react";
+import dynamic from "next/dynamic";
 import { cn } from "@/lib/utils";
-import { formatTime } from "@/components/music/types";
+import { formatTime } from "@/types/music";
 import type { CoverPalette } from "@/lib/cover-palette";
-import { MarqueeText } from "./marquee";
+import { MarqueeText } from "./Marquee";
 import AmllLyricView from "./AmllLyricView";
-import AmllBackground from "./AmllBackground";
 import { EMPTY_LRC_LINES } from "./lyric-amll";
 import type { LyricLine } from "./lyric-utils";
 import type { AmllRichResult } from "./ttml-amll";
-import type { DirectData, SearchItem } from "@/lib/music-client";
-import IconButton from "./icon-btn";
+import type { DirectData, SearchItem } from "@/lib/client/music-client";
+import IconButton from "./IconButton";
+
+/** AMLL 动态背景：核心依赖 WebGL / Pixi，必须 ssr:false —— 与 AmllLyricView 内的 AmllPlayer 同款写法。
+ *  原先单独开一个 `AmllBackground.tsx` 做这层壳，与实现文件 `amll-background.tsx` 仅首字母大小写
+ *  之差（Windows 无所谓，Linux / CI 上极易解析错），故内联掉，只留实现文件。 */
+const AmllBackground = memo(
+  dynamic(() => import("./amll-background"), { ssr: false })
+);
 
 /** 整页歌词的调色板 CSS 变量（限定 mplp-* 前缀，防止污染页面） */
 type MpCssVars = CSSProperties & Record<`--mplp-${string}`, string>;

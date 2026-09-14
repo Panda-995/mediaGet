@@ -13,11 +13,12 @@ import {
   VolumeX,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { BR_OPTIONS, formatTime } from "@/components/music/types";
-import type { DirectData, SearchItem } from "@/lib/music-client";
+import { BR_OPTIONS, formatTime } from "@/types/music";
+import type { DirectData, SearchItem } from "@/lib/client/music-client";
 import { BrPicker } from "@/components/music/BrPicker";
-import { MiniLyricLine } from "./marquee";
-import IconButton from "./icon-btn";
+import { MiniLyricLine } from "./Marquee";
+import IconButton from "./IconButton";
+import FavoriteButton from "./FavoriteButton";
 import type { LyricLine } from "./lyric-utils";
 
 export interface PlayerBarProps {
@@ -66,10 +67,12 @@ export interface PlayerBarProps {
   switchQuality: (br: string) => void;
   /** 打开整页歌词（底栏缩略封面 / 空白区唤起） */
   openLyricPage: () => void;
+  /** 收藏按钮动作完成回调（父层弹轻提示）；不传则静默 */
+  onFavoriteToggled?: (result: { added: boolean; persistFailed: boolean }) => void;
 }
 
 /**
- * 底部迷你播放条：进度（悬停气泡）/ 曲目与实时歌词 / 播放控制 / 音质选择 / 音量。
+ * 底部迷你播放条：进度（悬停气泡）/ 曲目与实时歌词 / 播放控制 / 音质选择 / 音量（悬停气泡）。
  * 测量用 ref（miniPlayerRef / pbarRef / tipBubbleRef）由父层持有，宽度派生
  * （pbarW / tipBubbleW / progressPercent / volumePercent）也在父层维护。
  */
@@ -114,6 +117,7 @@ export default function PlayerBar({
   playNext,
   switchQuality,
   openLyricPage,
+  onFavoriteToggled,
 }: PlayerBarProps) {
   const disabledPrev = !list || currentIndex == null || currentIndex <= 0;
   const disabledNext =
@@ -184,7 +188,7 @@ export default function PlayerBar({
     <div className="mp-player" ref={miniPlayerRef}>
       <div
         ref={pbarRef}
-        className={cn("mp-pbar", progHover && "is-hot")}
+        className={cn("mp-pbar", !picked && "is-idle", progHover && "is-hot")}
         style={{ "--mp-prog": progGrad } as CSSProperties}
         onMouseEnter={() => setProgHover(true)}
         onMouseLeave={() => setProgHover(false)}>
@@ -274,6 +278,14 @@ export default function PlayerBar({
             </div>
             {renderMiniLyric()}
           </div>
+          {/* 底栏收藏位：.mp-like 尺寸是本文件外早就预留好的（见 music.css），
+              无需新增样式；.mp-prow 的空白区点击已被 openLyricFromBlank 的
+              button 判定排除，不会误开歌词页 */}
+          <FavoriteButton
+            item={picked}
+            className="mp-like"
+            onToggled={onFavoriteToggled}
+          />
         </div>
 
         <div className="mp-ctrls">
@@ -325,20 +337,34 @@ export default function PlayerBar({
               style={{ width: 24, height: 24 }}>
               {muted || volume === 0 ? <VolumeX /> : <Volume2 />}
             </IconButton>
-            <input
-              type="range"
-              min={0}
-              max={1}
-              step={0.05}
-              value={muted ? 0 : volume}
-              onInput={(e) => {
-                const v = Number(e.currentTarget.value);
-                setVolume(v);
-                if (v > 0) setMuted(false);
-              }}
-              style={{ "--mp-prog": volGrad } as CSSProperties}
-              aria-label="音量"
-            />
+            {/* 音量条容器：兼作悬停热区与气泡定位参照（原生 range 只有 3px 高） */}
+            <span className="mp-voltrack">
+              <input
+                type="range"
+                min={0}
+                max={1}
+                step={0.05}
+                value={muted ? 0 : volume}
+                onInput={(e) => {
+                  const v = Number(e.currentTarget.value);
+                  setVolume(v);
+                  if (v > 0) setMuted(false);
+                }}
+                style={{ "--mp-prog": volGrad } as CSSProperties}
+                aria-label="音量"
+              />
+              {/* 音量气泡：内容与横向位置都随音量实时派生（不占父层状态）。
+                  显示时机交给 CSS 的 hover / active / :focus-visible；
+                  aria-hidden：数值已由滑杆自身（role=slider）与右侧百分比读出 */}
+              <span
+                className="mp-vol-tip"
+                style={{ "--mp-vol-ratio": muted ? 0 : volume } as CSSProperties}
+                aria-hidden="true">
+                {muted || volume === 0
+                  ? "已静音"
+                  : `${Math.round(volume * 100)}%`}
+              </span>
+            </span>
           </div>
           <span
             className="mp-volpct"

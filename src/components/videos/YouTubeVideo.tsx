@@ -3,6 +3,8 @@ import React, { useEffect, useRef, useState } from "react";
 import Image, { type ImageProps } from "next/image";
 import { Download, ExternalLink, Music, Pause, Play, X } from "lucide-react";
 import { ApiResponse, ParseData } from "@/types/api";
+import { formatCount } from "@/lib/format";
+import { scrollToElement } from "@/lib/dom";
 import { sanitizeFilename } from "@/utils/filename";
 import { buildVideoProxyUrl } from "@/utils/videoProxy";
 import PlatformIcon from "@/components/PlatformIcon";
@@ -164,14 +166,6 @@ function fmtDuration(ms?: number): string {
   const s = totalSec % 60;
   const pad = (x: number) => String(x).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
-}
-
-/** 订阅数缩写：>1万 → x.x万 / xx万，其余千分位（与 B站 UP 卡统计一致） */
-function fmtCount(n: number): string {
-  if (n >= 10000) {
-    return `${(n / 10000).toFixed(n >= 1000000 ? 0 : 1)}万`;
-  }
-  return n.toLocaleString("zh-CN");
 }
 
 /** 从官方嵌入地址中提取 videoId（兜底：部分数据可能只有 embedUrl 而无 videoId） */
@@ -439,12 +433,8 @@ export default function YouTubeVideo({ data }: { data: ApiResponse }) {
   };
 
   /** 「下载视频」主按钮：滚动定位到下方下载选项卡（与 B站行为一致） */
-  const scrollToDownload = () => {
-    const target =
-      document.getElementById("youtube-download-0") ||
-      document.getElementById("youtube-download");
-    target?.scrollIntoView({ behavior: "smooth", block: "center" });
-  };
+  const scrollToDownload = () =>
+    scrollToElement("youtube-download-0", { fallbackId: "youtube-download" });
 
   /** 主按钮：未展开 → 展开并自动播放；可控制时切换 播放/暂停；
    *  不可控制（plain 层，仅 embedUrl 旧数据）时回退为收起播放器 */
@@ -596,7 +586,7 @@ export default function YouTubeVideo({ data }: { data: ApiResponse }) {
                     <span className="inline-flex items-center gap-1">
                       <span className="text-muted">订阅</span>
                       <span className="font-semibold text-primary">
-                        {fmtCount(subCount)}
+                        {formatCount(subCount)}
                       </span>
                     </span>
                   )}
@@ -604,7 +594,7 @@ export default function YouTubeVideo({ data }: { data: ApiResponse }) {
                     <span className="inline-flex items-center gap-1">
                       <span className="text-muted">投稿</span>
                       <span className="font-semibold text-primary">
-                        {fmtCount(videoCount)}
+                        {formatCount(videoCount)}
                       </span>
                     </span>
                   )}
@@ -612,7 +602,7 @@ export default function YouTubeVideo({ data }: { data: ApiResponse }) {
                     <span className="inline-flex items-center gap-1">
                       <span className="text-muted">累计播放</span>
                       <span className="font-semibold text-primary">
-                        {fmtCount(channelViews)}
+                        {formatCount(channelViews)}
                       </span>
                     </span>
                   )}

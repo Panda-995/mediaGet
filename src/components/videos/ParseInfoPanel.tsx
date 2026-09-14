@@ -4,6 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, Info } from "lucide-react";
 import { ParseData } from "@/types/api";
+import { formatCountLoose as formatCount } from "@/lib/format";
 import TruncatedText from "@/components/ui/truncated-text";
 
 /**
@@ -36,30 +37,6 @@ interface ParseInfoPanelProps {
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
-}
-
-/** 点赞数：兼容数字 / 数字字符串 / 中文单位字符串（如小红书 "24.9万"），统一千分位 / 万缩写 */
-function formatCount(value: unknown): string | undefined {
-  let n: number;
-  if (typeof value === "number") {
-    n = value;
-  } else if (typeof value === "string") {
-    const m = value.trim();
-    const w = /^([\d.]+)\s*万$/.exec(m);
-    const y = /^([\d.]+)\s*亿$/.exec(m);
-    if (w) n = parseFloat(w[1]) * 10000;
-    else if (y) n = parseFloat(y[1]) * 100000000;
-    else n = parseFloat(m);
-  } else {
-    n = Number.NaN;
-  }
-  if (!Number.isFinite(n) || n <= 0) return undefined;
-  if (n >= 10000) {
-    return n >= 1000000
-      ? `${(n / 10000).toFixed(0)}万`
-      : `${(n / 10000).toFixed(1)}万`;
-  }
-  return n.toLocaleString("zh-CN");
 }
 
 /** 发布时间：unix 秒时间戳（>=1e12 视为毫秒）/ 可解析日期字符串 → "YYYY-MM-DD HH:mm" */

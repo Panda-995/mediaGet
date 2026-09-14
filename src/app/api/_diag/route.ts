@@ -1,10 +1,10 @@
 // 临时诊断端点：验证 Next.js 运行时下抖音 user 主页请求是否可用
 // 用完即删
 /* eslint-disable @typescript-eslint/no-explicit-any */
+import { UA_IOS_SAFARI_16_6 } from "@/lib/http";
 import { NextRequest, NextResponse } from "next/server";
 
-const WEB_UA =
-  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1";
+const WEB_UA = UA_IOS_SAFARI_16_6;
 
 function extractTtwid(response: Response): string {
   const raw = response.headers.get("set-cookie") || "";
