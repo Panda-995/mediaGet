@@ -82,6 +82,17 @@ export type PlayFailStage = "resolve" | "play" | null;
 
 /** 音质切换成功后该窗口内的 <audio> 媒体报错视为“新档不可播”，不触发歌曲级整曲换源（ms） */
 const QUALITY_SWITCH_MEDIA_WINDOW_MS = 5000;
+/**
+ * ended 时至少要推进过这么久的**播放进度**才算「真的播完」（见 handleEnded）。低于此值
+ * 说明根本没播过内容 —— iOS Safari 在直链服务器不支持 HTTP Range 时拿不到时长，会在起播
+ * 瞬间就派发 ended，若照常推进下一首会以极快速度连锁跳完整张列表。
+ *
+ * 用进度而非「起播后经过的时间」：拖进度条到末尾（只剩几秒）再播完属正常播完，
+ * 按经过时间判会被误拦。正常播完时进度已到时长附近，两种场景都能正确放行。
+ */
+const MIN_PLAY_SEC_BEFORE_ENDED = 1;
+/** 时长不可判定（duration 为 NaN / Infinity）时的兜底判据：起播后至少经过这么久 */
+const MIN_PLAY_MS_BEFORE_ENDED = 1000;
 
 export function usePlayerEngine(options: UsePlayerEngineOptions) {
   const { list, hasMore, source, fetchMorePage, notify } = options;
@@ -156,6 +167,11 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   const altTokenRef = useRef(0);
   /** 跨源现搜（来源 B）的 AbortController：手动切歌/重置时中止在途搜索，省请求防陈旧结果 */
   const crossAbortRef = useRef<AbortController | null>(null);
+  /**
+   * 最近一次真实起播（onPlay）时刻，用于识别「秒结束」的异常 ended。
+   * 0 表示本次会话还没出过声（无法判定），此时不做拦截。
+   */
+  const playStartedAtRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -198,6 +214,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     onPlayRejected: () => setPlaying(false),
     onPlay: () => {
       setPlaying(true);
+      playStartedAtRef.current = Date.now();
       // 层①写入条件：**真实出声**才算播放成功（取到直链不算，直链可播≠能播）
       const it = picked;
       if (it) {
@@ -579,11 +596,37 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   };
 
   const handleEnded = () => {
+    // 取直链 / 自动换源进行中：元素上挂的是即将被替换的旧资源，它的 ended 不代表
+    // 「当前曲目播完」。此时推进下一首会把切歌意图叠加成连锁跳歌——弱网（移动端常见）
+    // 下会一路推完整张列表。与 handleMediaError 同口径地忽略在途状态。
+    if (fetching || altInFlightRef.current) return;
+    // 旧资源迟到的 ended（直链已切走）同样不推进
+    const audio = transport.audioRef.current;
+    const src = audio?.currentSrc || audio?.src || "";
+    const cur = transport.resourceUrlRef.current;
+    if (src && cur && !isSameMediaSrc(src, cur)) return;
+    // 单曲循环：只重播当前曲，不存在「连锁推进下一首」的风险，无需下面的异常判定
     if (loop) {
       transport.play();
-    } else {
-      playNext();
+      return;
     }
+    // 「秒结束」防御：见 MIN_PLAY_SEC_BEFORE_ENDED。
+    const dur = audio?.duration ?? NaN;
+    const pos = audio?.currentTime ?? NaN;
+    if (Number.isFinite(dur) && dur > 0 && Number.isFinite(pos)) {
+      // 时长与进度可判定：进度几乎没推进 = 没播过内容，不推进下一首。
+      // 播完（含拖到末尾只播几秒）时进度已在时长附近，正常放行。
+      if (pos < MIN_PLAY_SEC_BEFORE_ENDED) return;
+    } else if (
+      // 时长不可判定（iOS 无 Range：duration 为 NaN / Infinity）→ 退回按起播时刻兜底。
+      // playStartedAt 为 0 表示本次会话尚未出过声，无从判定，保持原有推进行为。
+      playStartedAtRef.current > 0 &&
+      Date.now() - playStartedAtRef.current < MIN_PLAY_MS_BEFORE_ENDED
+    ) {
+      return;
+    }
+    playStartedAtRef.current = 0;
+    playNext();
   };
 
   /**

@@ -126,6 +126,11 @@ export function useAudioTransport(options: UseAudioTransportOptions) {
   /**
    * 在当前用户手势内“静音试播”一次以解锁浏览器自动播放策略，
    * 这样直链异步就绪后的 play() 不会被拦截。静音会保持到正式播放前按用户设置恢复。
+   *
+   * 注意：这里的 play() 同时是 iOS 的**加载启动器**——iOS Safari 忽略 preload，
+   * 不调用 play() 就不会开始拉取数据，playWhenReady 等到的 canplay 永远不会来。
+   * 因此不能改成「有 src 就跳过」。旧资源在取链期间继续走时钟而派发的 ended，
+   * 由引擎侧 handleEnded 的在途守卫负责拦截。
    */
   const unlockAutoplay = useCallback(() => {
     const audio = audioRef.current;
@@ -198,7 +203,12 @@ export function useAudioTransport(options: UseAudioTransportOptions) {
       if (audio.readyState >= 2) startPlay();
       else audio.addEventListener("canplay", startPlay, { once: true });
     }, 0);
-    return () => clearTimeout(timer);
+    return () => {
+      clearTimeout(timer);
+      // 必须一并摘掉：直链取到后若该资源始终没 canplay（取链成功但媒体层失败），
+      // `once` 永不消耗，换源 / 切歌时这些僵尸监听会随每次 canplay 重复触发 play()
+      audio.removeEventListener("canplay", startPlay);
+    };
   }, [play]);
 
   const audioProps: AudioElementProps = {

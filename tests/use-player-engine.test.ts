@@ -385,6 +385,7 @@ describe("transport 原语（待抽离，先锁行为）", () => {
     await act(async () => {
       await loopOff.result.current.playTrack(list[0], 0);
     });
+    loopOff.audio.currentTime = loopOff.audio.duration; // 播到结尾
     act(() => loopOff.result.current.audioProps.onEnded());
     await waitFor(() =>
       expect(loopOff.result.current.picked).toMatchObject({ id: "K1" })
@@ -395,15 +396,75 @@ describe("transport 原语（待抽离，先锁行为）", () => {
     const list = [item("netease", "N1"), item("kugou", "K1")];
     requestPlayDirect.mockResolvedValue(directFor("https://a/320.mp3"));
     const fetchMorePage = vi.fn(async () => {});
-    const { result } = mount({ list, hasMore: true, fetchMorePage });
+    const { result, audio } = mount({ list, hasMore: true, fetchMorePage });
     await act(async () => {
       await result.current.playTrack(list[1], 1); // 停在最后一首
     });
+    audio.currentTime = audio.duration; // 播到结尾
     await act(async () => {
       result.current.audioProps.onEnded();
     });
     expect(fetchMorePage).toHaveBeenCalledTimes(1);
     await waitFor(() => expect(result.current.picked).toMatchObject({ id: "N1" }));
+  });
+
+  it("起播瞬间就 ended（进度没推进）→ 不推进下一首", async () => {
+    const list = [item("netease", "N1"), item("kugou", "K1")];
+    requestPlayDirect.mockResolvedValue(directFor("https://a/320.mp3"));
+    const { result, audio } = mount({ list });
+    await act(async () => {
+      await result.current.playTrack(list[0], 0);
+    });
+    audio.currentTime = 0; // 根本没播过内容
+    await act(async () => {
+      result.current.audioProps.onPlay();
+      result.current.audioProps.onEnded();
+    });
+    // 应停在第一首；否则会连锁跳完整张列表
+    expect(result.current.picked).toMatchObject({ id: "N1" });
+  });
+
+  it("正常播完（进度已到时长附近）→ 照常推进下一首", async () => {
+    const list = [item("netease", "N1"), item("kugou", "K1")];
+    requestPlayDirect.mockResolvedValue(directFor("https://a/320.mp3"));
+    const { result, audio } = mount({ list });
+    await act(async () => {
+      await result.current.playTrack(list[0], 0);
+    });
+    audio.currentTime = audio.duration;
+    await act(async () => {
+      result.current.audioProps.onEnded();
+    });
+    await waitFor(() => expect(result.current.picked).toMatchObject({ id: "K1" }));
+  });
+
+  it("拖到末尾只播几秒就 ended → 仍算播完并推进下一首（不误伤）", async () => {
+    const list = [item("netease", "N1"), item("kugou", "K1")];
+    requestPlayDirect.mockResolvedValue(directFor("https://a/320.mp3"));
+    const { result, audio } = mount({ list });
+    await act(async () => {
+      await result.current.playTrack(list[0], 0);
+    });
+    audio.duration = 240;
+    audio.currentTime = 239.5; // 只剩 0.5 秒，但进度已在时长附近
+    await act(async () => {
+      result.current.audioProps.onEnded();
+    });
+    await waitFor(() => expect(result.current.picked).toMatchObject({ id: "K1" }));
+  });
+
+  it("时长不可判定（duration=NaN）且起播不足 1 秒 → 按起播时刻兜底，不推进下一首", async () => {
+    const list = [item("netease", "N1"), item("kugou", "K1")];
+    requestPlayDirect.mockResolvedValue(directFor("https://a/320.mp3"));
+    const { result } = mount({ list, audio: { duration: NaN } });
+    await act(async () => {
+      await result.current.playTrack(list[0], 0);
+    });
+    await act(async () => {
+      result.current.audioProps.onPlay(); // 记录起播时刻
+      result.current.audioProps.onEnded(); // 立即结束
+    });
+    expect(result.current.picked).toMatchObject({ id: "N1" });
   });
 });
 
