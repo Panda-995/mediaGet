@@ -304,15 +304,17 @@ export default function MusicExplorer({ initialView }: { initialView?: MusicView
   // 悬停状态一变就会重跑本 effect（清掉旧计时器），所以悬停期间计时被彻底挂起：
   // 指针一直放在播放条区域就一直保持唤起，移开的那一刻才重新起算 5 秒，到点仍无播放才收起。
   // 收起态下唯一唤起点是底部那条不占位的细把手；触摸 / 键盘唤起后同样按「离开满 5 秒」收起。
+  // 移动端不参与自动收起：触摸端没有 hover 能挂起倒计时，条会在 5 秒后凭空消失，
+  // 而移动端隐藏了「正在播放」卡片（.mp-side），底栏是唯一的播放控制入口 → 恒常驻展开。
   useEffect(() => {
-    if (trackLoaded || barHovered) {
+    if (isMobile || trackLoaded || barHovered) {
       setBarCollapsed(false);
       return;
     }
     if (barCollapsed) return;
     const timer = window.setTimeout(() => setBarCollapsed(true), BAR_AUTO_COLLAPSE_MS);
     return () => window.clearTimeout(timer);
-  }, [trackLoaded, barHovered, barCollapsed]);
+  }, [isMobile, trackLoaded, barHovered, barCollapsed]);
 
   /** 指针进入 / 离开播放条区域（→ 挂起 / 重启自动收起）。
    *  只认真指针（鼠标、触控笔）：触摸端在点按后会补发鼠标事件，若一并计入，
