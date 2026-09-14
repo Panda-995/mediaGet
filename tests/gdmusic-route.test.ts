@@ -180,6 +180,111 @@ describe("GET /api/music（通用音乐源获取）", () => {
     expect(res.status).toBe(400);
     expect(await res.text()).toContain("id");
   });
+
+  // —— bin=1 字节代理下载 ——
+  // 锁的是「下载只能出音频」：上游一旦返回非音频（风控 JSON / 过期提示 / 403），
+  // 必须回错误 JSON 而不能把字节原样下发——否则前端 <a download> 会把这段错误体
+  // 存成 .json 文件，用户看到的就是「点了下载，下来一个 JSON」。
+  const DL_URL = "https://m701.music.126.net/2026xxx/obj/wo3DlMOGwrbDjj7DisKw/x.mp3";
+  const BIN_IP = "203.0.113.77";
+
+  /** 解析请求（types=url）返回直链，下载请求返回给定的 bytesResponse */
+  function mockUpstream(bytesResponse: Response) {
+    return vi.fn(async (url: string) =>
+      String(url).includes("types=url")
+        ? new Response(
+            JSON.stringify({ url: DL_URL, br: 320, size: 10862803 }),
+            { status: 200 }
+          )
+        : bytesResponse
+    ) as unknown as typeof global.fetch;
+  }
+
+  const binReq = (extra = "") =>
+    new Request(
+      `http://127.0.0.1/api/music?source=netease&id=287719&br=320&bin=1` +
+        `&title=${encodeURIComponent("开始懂了")}${extra}`,
+      { headers: { "x-forwarded-for": BIN_IP } }
+    );
+
+  it("bin=1：音频字节原样下发 + attachment 文件名带音质标签", async () => {
+    global.fetch = mockUpstream(
+      new Response("AUDIOBYTES", {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg" },
+      })
+    );
+
+    const res = await GET(binReq());
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("audio/mpeg");
+    expect(res.headers.get("content-disposition")).toContain("attachment");
+    expect(res.headers.get("content-disposition")).toContain(
+      `filename*=UTF-8''${encodeURIComponent("开始懂了 - 标准音质·320kbps.mp3")}`
+    );
+    expect(await res.text()).toBe("AUDIOBYTES");
+  });
+
+  it("bin=1：带 artist 时文件名含艺术家「曲名 - 艺术家 - 音质标签」", async () => {
+    global.fetch = mockUpstream(
+      new Response("AUDIOBYTES", {
+        status: 200,
+        headers: { "Content-Type": "audio/mpeg" },
+      })
+    );
+    // 多歌手以前端约定「, 」连接后下发，服务端拼进文件名
+    const res = await GET(
+      binReq(`&artist=${encodeURIComponent("孙燕姿, 林俊杰")}`)
+    );
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-disposition")).toContain(
+      `filename*=UTF-8''${encodeURIComponent("开始懂了 - 孙燕姿, 林俊杰 - 标准音质·320kbps.mp3")}`
+    );
+  });
+
+  it("bin=1：上游 200 却是 JSON（过期 / 风控）→ 502，绝不把 JSON 当音频下发", async () => {
+    global.fetch = mockUpstream(
+      new Response(JSON.stringify({ code: -460, msg: "Cheating" }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      })
+    );
+
+    const res = await GET(binReq());
+    expect(res.status).toBe(502);
+    // 关键：不能带 attachment，否则浏览器会把它存成文件
+    expect(res.headers.get("content-disposition")).toBeNull();
+    const json = await res.json();
+    expect(json.code).toBe(502);
+    expect(json.failType).toBe("sources-down");
+    expect(json.msg).toContain("非音频");
+  });
+
+  it("bin=1：上游 403（防盗链 / 直链失效）→ 502 + 失效该直链缓存", async () => {
+    const fetchMock = mockUpstream(
+      new Response("nope", { status: 403 })
+    );
+    global.fetch = fetchMock;
+
+    const res = await GET(binReq());
+    expect(res.status).toBe(502);
+    expect((await res.json()).failType).toBe("sources-down");
+
+    // 缓存若没失效，下一次请求会直接复用这条死链（不再打上游 types=url）；
+    // 失效后必须重新解析——否则用户点重试拿到的永远是同一个坏结果。
+    const before = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("types=url")
+    ).length;
+    await GET(
+      new Request("http://127.0.0.1/api/music?source=netease&id=287719&br=320", {
+        headers: { "x-forwarded-for": BIN_IP },
+      })
+    );
+    const after = fetchMock.mock.calls.filter((c) =>
+      String(c[0]).includes("types=url")
+    ).length;
+    expect(after).toBe(before + 1);
+  });
 });
 
 describe("GET /api/music?action=search（关键词搜歌）", () => {

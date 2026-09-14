@@ -17,6 +17,7 @@
  *   行为一致，仅不跨实例共享
  */
 import { verifyDirectUrl } from "@/lib/verifyUrl";
+import { logger } from "@/lib/api-utils";
 
 /** 分享打开窗口按天计，直链时效由命中探测兜底，故 TTL 取一整天 */
 const TTL_SECONDS = 24 * 60 * 60;
@@ -43,7 +44,10 @@ export async function getResultCache(url) {
     try {
       const hit = await caches.default.match(cacheRequest(url));
       return hit ? await hit.json() : null;
-    } catch {
+    } catch (e) {
+      // Cache API 异常按未命中处理，但必须留痕：持续失败说明缓存层不可用，
+      // 会静默退化成「每次都重新解析」（上游压力与耗时都涨）。
+      logger.warn("[result-cache] 读缓存失败，按未命中处理:", e?.message);
       return null;
     }
   }
@@ -75,8 +79,9 @@ export async function putResultCache(url, result) {
           },
         })
       );
-    } catch {
-      // 忽略：Cache API 写入异常不影响主流程
+    } catch (e) {
+      // 写失败只影响下次命中率，不阻断本次响应；但静默会让缓存层故障长期不被发现
+      logger.warn("[result-cache] 写缓存失败，本次结果不缓存:", e?.message);
     }
     return;
   }
@@ -110,8 +115,9 @@ export async function resultStale(result) {
     try {
       const v = await verifyDirectUrl(direct);
       if (v && v.ok === false) return true;
-    } catch {
-      // 探测异常按有效处理
+    } catch (e) {
+      // 探测异常按有效处理（绝不误伤好链）；留痕便于区分「探测失败」与「真死链」
+      logger.warn("[result-cache] 直链探测异常，按有效处理:", e?.message);
     }
   }
   return false;

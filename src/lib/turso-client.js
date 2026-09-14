@@ -11,6 +11,8 @@
  * 协议参考 Turso HTTP API（libsql 的 /v2/pipeline）。
  */
 
+import { TIMEOUT } from "@/lib/http";
+
 /**
  * 单次 HTTP 请求超时（ms）。
  *
@@ -19,7 +21,7 @@
  * 写直接 503，而日志只有一句 The operation was aborted due to timeout。
  * 可用 TURSO_HTTP_TIMEOUT_MS 覆盖（夹在 0.5s ~ 60s，防止误配成 0/inf）。
  */
-const DEFAULT_HTTP_TIMEOUT_MS = 8000;
+const DEFAULT_HTTP_TIMEOUT_MS = TIMEOUT.DEFAULT;
 const MIN_HTTP_TIMEOUT_MS = 500;
 const MAX_HTTP_TIMEOUT_MS = 60000;
 

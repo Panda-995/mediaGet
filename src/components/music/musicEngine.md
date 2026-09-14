@@ -75,6 +75,14 @@
 4. 失败仅 `setPlayError(msg)` 展示，**当前无自动换源**；队列续播只由 `ended` 驱动。
 5. 封面走 `requestPic`（picId→URL，代理可用时 `coverBinUrl` 同源取色）；下载由 `trackDownloadSpec` 决策 `bin`（同源字节代理、文件名带音质标签）或 `external`。
 
+   **`bin` 分支不能用 `<a download href>` 直连**（踩过的坑）：那样浏览器会把服务端
+   **错误响应也照存成文件**——上游偶发失败（防盗链 403 / 直链过期 / 风控 JSON）时用户
+   点下载得到的是内容全为 JSON 的 `.json` 文件，且没有任何提示。现状是 UI 调
+   `downloadBinTrack()`：先取回字节、确认状态与 `Content-Type` 是音频后才落盘，失败抛
+   `MusicDownloadError` 由父层弹轻提示。服务端侧同样设了两道闸：`bin=1` 命中直链缓存
+   也**必须**去源站取字节（缓存里是解析结果 JSON，直接回它等于把 JSON 当文件下发），
+   且非音频响应一律回 `502 sources-down` 并失效该直链缓存（见 `API.md` §12）。
+
 ---
 
 ## 2. 现状约束清单（增强设计的地基）
@@ -253,7 +261,7 @@ CURRENT(source,id,br)
 | 音乐页视图（发现歌曲 / 播放列表 / 我的收藏） | Cookie `mp-music-view`（SSR 首帧读）+ localStorage `mp-music-view`（回落） | 永久 | `music-view-store.ts` + `lib/music-view.ts`；视图决定**首屏渲染哪块面板**，故偏好同时写 Cookie 让服务端可知（首帧即正确视图，刷新不闪）；`useMusicView(initialView)` 用 Cookie 值播种内存态，`restoreMusicView()` 只在服务端没读到 Cookie 时兜底 |
 | 上次播放会话（曲目 + 进度） | localStorage `mp-playback-session` | 24h | `playback-session.ts`；恢复走引擎 `restorePlayback`（暂停态定位，不自动出声、不进自动换源闭环） |
 | 播放列表快照（搜索结果 + 已翻页累积） | localStorage `mp-playlist-cache-v2`（单份 JSON，上限 400 条） | 永久（空结果即清） | `playlist-cache.ts`；仅单平台渠道下写——聚合列表来源混合、刷新后无从恢复，刻意不落盘；是否可回填由 `canRestorePlaylistSnapshot`（渠道偏好为单平台且来源一致）决定，恢复**只回填列表 / 关键词 / 翻页进度，不改写视图** |
-| 搜索渠道偏好（聚合 / 单平台） | localStorage `mp-search-channel`（`{v, agg, source}`） | 永久 | `MusicExplorer.tsx` 内 `readSearchChannelPref` / `writeSearchChannelPref`；只在用户显式交互时写（点 chip / 提交搜索），链接解析与快照恢复等被动变化不写，避免渠道被拖成并非用户所选 |
+| 搜索渠道偏好（聚合 / 单平台） | localStorage `mp-search-channel`（`{v, agg, source}`） | 永久 | `search-channel-pref.ts` 的 `readSearchChannelPref` / `writeSearchChannelPref`；只在用户显式交互时写（点 chip / 提交搜索），链接解析与快照恢复等被动变化不写，避免渠道被拖成并非用户所选。带结构版本号，且恢复时过引擎开关（引擎已关的源回落默认）；**不做内存缓存**（开关异步到达，缓存会固化旧判断） |
 | 最近搜索关键词 | localStorage `mp-search-history`（`{v, items}`，上限 8 条） | 永久 | `search-history.ts`；只存关键词不存渠道，点历史词按当前渠道重搜；纯个人行为明细，只留本机（§7.5） |
 | 个人收藏（曲目身份 + 元数据） | localStorage `mp-favorites`（`{v, items}`，上限 500 条） | 永久 | `favorites.ts`（纯变换 + IO 原语）+ `favorites-store.ts`（`useSyncExternalStore` 共享态，四处消费：结果行 / 正在播放卡片 / 底部播放条 / 「我的收藏」面板）。唯一键 `musicKey`（`source:id`），**刻意不做跨源合并**（`songIdentityKey` 会误合不同版本）；存 `urlId`（取直链要用，咪咕等源与 `id` 不同）、**不存 `line` 与直链**；上限按 `addedAt` 淘汰最旧；「我的收藏」面板**复用播放列表的 `.mp-row` / `.mp-cell-*` 与同一份逐列宽度变量**，不自持一套行样式（列宽只有一份定义，改列不会漏改一边），差异只有两处内容层面的：**不渲染「线路」列**（收藏不存 `line`，靠 `mp-favs` 换用少拼一条轨道的模板）、**行内动作钮直接复用 `FavoriteButton`**（面板里每行都是已收藏态，显示的就是点亮后的那颗心，点一下即取消收藏） |
 | 歌词（LRC 原文 + AMLL TTML 原文） | IndexedDB `mp-media-cache` | 30 天 | `media-cache.ts`；命中即免一次第三方请求 |

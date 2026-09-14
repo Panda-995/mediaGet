@@ -1,4 +1,4 @@
-import { UA_EDGE_WIN129 } from "@/lib/http";
+import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
 
@@ -121,7 +121,7 @@ async function fetchXhsNoteHtml(url, attempt = 1) {
     fetch(u, {
       headers: xhsHeaders(referer ? { referer } : {}),
       redirect: "manual",
-      signal: AbortSignal.timeout(20000),
+      signal: AbortSignal.timeout(TIMEOUT.PAGE),
     });
 
   try {
@@ -525,7 +525,7 @@ async function pickStableVideoUrl(entry) {
     try {
       const head = await fetch(u, {
         method: "HEAD",
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(TIMEOUT.SHORT),
       });
       if (head.ok) return u;
     } catch {

@@ -12,8 +12,11 @@
 import { UA_IOS_SAFARI_16_6 } from "@/lib/http";
 const DEFAULT_UA = UA_IOS_SAFARI_16_6;
 
+/** HEAD 校验默认超时：4s（不在公共档位上，沿用原值；调用方可用 options.timeout 覆盖） */
+const DEFAULT_VERIFY_TIMEOUT_MS = 4_000;
+
 export async function verifyDirectUrl(url, options = {}) {
-  const { timeout = 4000, ua = DEFAULT_UA } = options;
+  const { timeout = DEFAULT_VERIFY_TIMEOUT_MS, ua = DEFAULT_UA } = options;
   try {
     const resp = await fetch(url, {
       method: "HEAD",

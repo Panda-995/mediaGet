@@ -1,4 +1,4 @@
-import { UA_CHROME_WIN126 } from "@/lib/http";
+import { TIMEOUT, UA_CHROME_WIN126 } from "@/lib/http";
 import { getUpstreamBases } from "@/lib/gdmusic";
 
 /**
@@ -12,8 +12,18 @@ export const REQUEST_HEADERS = {
   Accept: "application/json, text/plain, */*",
 };
 
+/**
+ * 取音频字节的请求头（bin 下载专用）。
+ * 与 REQUEST_HEADERS 只差 Accept：那是 JSON 优先，用于取结构化数据；这里是取
+ * 音频文件，必须声明要音频，免得上游按内容协商返回别的表示形式。
+ */
+export const MEDIA_REQUEST_HEADERS = {
+  "User-Agent": UA_CHROME_WIN126,
+  Accept: "audio/*;q=0.9,video/*;q=0.8,*/*;q=0.7",
+};
+
 /** 单个上游请求的超时预算（多基址链下会均分给剩余基址，见 fetchUpstreamChain） */
-export const UPSTREAM_TIMEOUT = 8000;
+export const UPSTREAM_TIMEOUT = TIMEOUT.DEFAULT;
 
 /** 识别上游返回的 CF 人机校验/风控页：GD 音乐台对数据中心出口（如 Vercel 海外机房）会回此页，
  *  并非真实数据，直接当作"上游暂不可用"处理，避免把校验页塞进歌词/解析结果。 */

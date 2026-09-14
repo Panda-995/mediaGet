@@ -4,7 +4,7 @@
  * 需先在 .env（或环境变量）中配置 tests/live/urls.example.env 所列全部 LIVE_URL_*。
  */
 // @ts-nocheck
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect } from "vitest";
 import { GET as GETDouyin } from "@/app/api/douyin/route.js";
 import { GET as GETBilibili } from "@/app/api/bilibili/route.js";
 import { GET as GETKuaishou } from "@/app/api/kuaishou/route.js";

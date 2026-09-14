@@ -78,6 +78,9 @@ export { requestSearchPage, searchAcrossSources } from "./music-client-search";
 // —— 直链通道 ——
 export type { TrackDownloadSpec } from "./music-client-direct";
 export {
+  MusicDownloadError,
+  downloadBinTrack,
+  fileNameFromDisposition,
   requestDirect,
   requestPlayDirect,
   trackDownloadSpec,

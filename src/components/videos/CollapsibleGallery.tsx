@@ -1,5 +1,5 @@
 "use client";
-import React, { useLayoutEffect, useState, useRef, ReactNode } from "react";
+import { useLayoutEffect, useState, useRef, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { ChevronDown, ChevronUp } from "lucide-react";
 

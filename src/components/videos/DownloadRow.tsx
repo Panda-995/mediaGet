@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import Image from "next/image";
 import { Check, ChevronDown, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -126,7 +126,7 @@ interface DownloadRowProps {
   cover?: string;
   coverAlt?: string;
   /** 无封面时的占位内容（如 YouTube 分离音频行的音符图标） */
-  iconPlaceholder?: React.ReactNode;
+  iconPlaceholder?: ReactNode;
   /** 行标题全文（调用方拼好前缀，如 "P1: xxx" / "视频：xxx"） */
   title: string;
   /** 时长副信息（如 0:19 / 00:03:32） */

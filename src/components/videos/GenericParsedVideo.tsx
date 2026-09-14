@@ -1,5 +1,4 @@
 "use client";
-import React from "react";
 import Image from "next/image";
 import { ApiResponse, ParseData } from "@/types/api";
 import VideoPosterCard from "./VideoPosterCard";

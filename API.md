@@ -660,6 +660,10 @@ GET /api/music?action=pic&source=netease&id=109951173569626660&size=300
 **`action=lyric`（获取歌词）**：参数同直链（`source` + `id`，兼容 `lyric_id` 别名），返回 `data.lyric`（LRC 时间轴或纯文本；上游直接返回 LRC 纯文本时原样透传）。歌词接口没有 `fmt=text` 形态。
 
 > `bin=1` 仅作用于 `url` / `pic` 分支：`url` 命中直链后不回 JSON，改为服务端字节代理下载（`attachment`，文件名自动带上音质标签，如「曲名 - 无损音质·24bit.flac」）；`pic` 分支返回封面图片字节，用于浏览器端 `<canvas>` 取色（规避第三方图床无 CORS 导致画布污染）。
+>
+> `url` 的 `bin=1` 有两条硬约束（都是踩过的坑）：
+> - **命中直链缓存也要真的去源站取字节**。缓存里存的是解析结果 JSON，直接回它等于把 JSON 当文件下发——前端 `<a download>` 会把这段 JSON 存成 `.json` 文件（「能播放却下载成 JSON」就是这么来的：播放过 = 已缓存 = 必命中）。
+> - **只下发音频字节**。上游返回非音频（`application/json` 风控 / 过期提示 / `text/html` 校验页）或 HTTP 非 2xx 时，一律回 `502 sources-down` 的 JSON，**不带** `Content-Disposition`；同时失效该直链缓存，避免 TTL 内反复复用死链。
 
 **失败分类**（各 action 通用，响应带 `failType` 便于程序判断）:
 

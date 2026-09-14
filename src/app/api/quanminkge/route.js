@@ -1,5 +1,6 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
+import { extractQueryParam, parseFail, parseOk } from "@/lib/parser-kit";
 
 export const runtime = "nodejs";
 
@@ -15,41 +16,35 @@ async function parseVideoId(videoId) {
   const html = await res.text();
   const m = html.match(/window\.__DATA__\s*=\s*(.*?);/s);
   if (!m?.[1]) {
-    return { code: 400, msg: "全民K歌页面解析失败" };
+    return parseFail(400, "全民K歌页面解析失败");
   }
   let root;
   try {
     root = JSON.parse(m[1].trim());
   } catch {
-    return { code: 400, msg: "全民K歌数据解析失败" };
+    return parseFail(400, "全民K歌数据解析失败");
   }
   const data = root?.detail;
   if (!data?.playurl_video) {
-    return { code: 404, msg: "未找到作品播放地址" };
+    return parseFail(404, "未找到作品播放地址");
   }
-  return {
-    code: 200,
-    msg: "解析成功",
-    data: {
-      title: data.content || "",
-      author: data.nick || "",
-      avatar: data.avatar || "",
-      uid: String(data.uid || ""),
-      cover: data.cover || "",
-      url: data.playurl_video,
-    },
-  };
+  return parseOk({
+    title: data.content || "",
+    author: data.nick || "",
+    avatar: data.avatar || "",
+    uid: String(data.uid || ""),
+    cover: data.cover || "",
+    url: data.playurl_video,
+  });
 }
 
 async function quanminkgeParse(shareUrl) {
-  let s = "";
-  try {
-    s = new URL(shareUrl).searchParams.get("s") || "";
-  } catch {
-    return { code: 400, msg: "链接无效" };
+  const { value: s, invalidUrl } = extractQueryParam(shareUrl, "s");
+  if (invalidUrl) {
+    return parseFail(400, "链接无效");
   }
   if (!s) {
-    return { code: 400, msg: "无法解析参数 s" };
+    return parseFail(400, "无法解析参数 s");
   }
   return parseVideoId(s);
 }

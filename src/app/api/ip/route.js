@@ -1,7 +1,14 @@
 import { logger, getCorsHeaders } from "@/lib/api-utils";
+import { TIMEOUT } from "@/lib/http";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+
+/**
+ * IP 归属查询超时：4s。**不在公共档位上**（XS 3s / SHORT 5s），是该场景的实测取值，
+ * 归到相邻档会改变行为，故就地具名（见 docs/REFACTOR-PLAN.md P2-2）。
+ */
+const IP_LOOKUP_TIMEOUT_MS = 4_000;
 
 const UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36";
@@ -12,7 +19,7 @@ const UA =
  */
 async function fetchIp9() {
   const res = await fetch("https://ip9.com.cn/get", {
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(IP_LOOKUP_TIMEOUT_MS),
     headers: { "User-Agent": UA },
   });
   if (!res.ok) throw new Error(`ip9.com.cn bad status ${res.status}`);
@@ -66,7 +73,7 @@ async function fetchPublicIp() {
     (async () => {
       try {
         const res = await fetch(url, {
-          signal: AbortSignal.timeout(3000),
+          signal: AbortSignal.timeout(TIMEOUT.XS),
           headers: { "User-Agent": UA },
         });
         if (!res.ok) return null;
@@ -111,7 +118,7 @@ function firstNonNull(promises) {
 async function fetchPconline(ip) {
   const url = `https://whois.pconline.com.cn/ipJson.jsp?ip=${encodeURIComponent(ip)}&json=true`;
   const res = await fetch(url, {
-    signal: AbortSignal.timeout(4000),
+    signal: AbortSignal.timeout(IP_LOOKUP_TIMEOUT_MS),
     headers: {
       "User-Agent": UA,
       Referer: "https://whois.pconline.com.cn/",

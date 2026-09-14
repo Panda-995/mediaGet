@@ -1,5 +1,6 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
+import { parseFail, parseOk } from "@/lib/parser-kit";
 
 export const runtime = "nodejs";
 
@@ -40,20 +41,16 @@ async function acfunParse(shareUrl) {
   }
 
   if (!videoUrl) {
-    return { code: 404, msg: "未找到 AcFun 播放地址" };
+    return parseFail(404, "未找到 AcFun 播放地址");
   }
 
-  return {
-    code: 200,
-    msg: "解析成功",
-    data: {
-      title,
-      author: "",
-      avatar: "",
-      cover,
-      url: videoUrl,
-    },
-  };
+  return parseOk({
+    title,
+    author: "",
+    avatar: "",
+    cover,
+    url: videoUrl,
+  });
 }
 
 export const GET = createApiHandler(acfunParse);

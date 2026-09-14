@@ -1,5 +1,6 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
+import { parseFail, parseOk } from "@/lib/parser-kit";
 
 export const runtime = "nodejs";
 
@@ -16,26 +17,22 @@ async function parseVideoId(videoId) {
   const json = await res.json();
   const videoData = json?.data?.moment?.videoInfo;
   if (!videoData?.definitions?.[0]?.url) {
-    return { code: 404, msg: "虎牙视频解析失败" };
+    return parseFail(404, "虎牙视频解析失败");
   }
-  return {
-    code: 200,
-    msg: "解析成功",
-    data: {
-      title: videoData.videoTitle || "",
-      author: videoData.actorNick || "",
-      avatar: videoData.actorAvatarUrl || "",
-      uid: String(videoData.uid || ""),
-      cover: videoData.videoCover || "",
-      url: videoData.definitions[0].url,
-    },
-  };
+  return parseOk({
+    title: videoData.videoTitle || "",
+    author: videoData.actorNick || "",
+    avatar: videoData.actorAvatarUrl || "",
+    uid: String(videoData.uid || ""),
+    cover: videoData.videoCover || "",
+    url: videoData.definitions[0].url,
+  });
 }
 
 async function huyaParse(shareUrl) {
   const m = shareUrl.match(/\/(\d+)\.html/);
   if (!m?.[1]) {
-    return { code: 400, msg: "无法从虎牙链接解析视频 id" };
+    return parseFail(400, "无法从虎牙链接解析视频 id");
   }
   return parseVideoId(m[1]);
 }

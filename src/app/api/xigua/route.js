@@ -2,6 +2,7 @@ import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
 import { getRedirectLocation } from "@/lib/redirect-location";
 import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
+import { parseFail, parseOk } from "@/lib/parser-kit";
 
 export const runtime = "nodejs";
 
@@ -22,48 +23,44 @@ async function parseVideoId(videoId) {
   const re = /window\._ROUTER_DATA\s*=\s*(.*?)<\/script>/is;
   const m = html.match(re);
   if (!m?.[1]) {
-    return { code: 400, msg: "西瓜页面解析失败" };
+    return parseFail(400, "西瓜页面解析失败");
   }
   let json;
   try {
     json = JSON.parse(m[1].trim());
   } catch (e) {
     logger.warn("xigua json", e.message);
-    return { code: 400, msg: "西瓜数据 JSON 解析失败" };
+    return parseFail(400, "西瓜数据 JSON 解析失败");
   }
   const videoData =
     json?.loaderData?.["video_(id)/page"]?.videoInfoRes?.item_list?.[0];
   if (!videoData?.video?.play_addr?.url_list?.[0]) {
-    return { code: 404, msg: "未找到播放地址" };
+    return parseFail(404, "未找到播放地址");
   }
-  return {
-    code: 200,
-    msg: "解析成功",
-    data: {
-      title: videoData.desc || "",
-      author: videoData.author?.nickname || "",
-      avatar: videoData.author?.avatar_thumb?.url_list?.[0] || "",
-      uid: String(videoData.author?.user_id || ""),
-      cover: videoData.video?.cover?.url_list?.[0] || "",
-      url: videoData.video.play_addr.url_list[0],
-    },
-  };
+  return parseOk({
+    title: videoData.desc || "",
+    author: videoData.author?.nickname || "",
+    avatar: videoData.author?.avatar_thumb?.url_list?.[0] || "",
+    uid: String(videoData.author?.user_id || ""),
+    cover: videoData.video?.cover?.url_list?.[0] || "",
+    url: videoData.video.play_addr.url_list[0],
+  });
 }
 
 async function xiguaParse(shareUrl) {
   const loc = await getRedirectLocation(shareUrl, PAGE_HEADERS);
   if (!loc) {
-    return { code: 400, msg: "无法获取西瓜短链重定向" };
+    return parseFail(400, "无法获取西瓜短链重定向");
   }
   let path = "";
   try {
     path = new URL(loc).pathname.replace(/^\/+|\/+$/g, "");
   } catch {
-    return { code: 400, msg: "短链无效" };
+    return parseFail(400, "短链无效");
   }
   const videoId = path.replace(/^video\//, "");
   if (!videoId) {
-    return { code: 400, msg: "无法解析视频 id" };
+    return parseFail(400, "无法解析视频 id");
   }
   return parseVideoId(videoId);
 }

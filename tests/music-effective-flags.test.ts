@@ -13,7 +13,6 @@ vi.mock("@/lib/settings-store", () => ({
 
 import {
   loadEffectiveMusicFlags,
-  MUSIC_SETTINGS_KEY,
   normalizeMusicSettingsDoc,
   resolveEffectiveMusicBehavior,
   resolveEffectiveMusicBuiltinPlay,
@@ -22,10 +21,7 @@ import {
 import { readSetting } from "@/lib/settings-store";
 import {
   MUSIC_BEHAVIOR_DEFAULTS,
-  MUSIC_BEHAVIOR_LIMITS,
   MUSIC_FLAG_PLATFORM_KEYS,
-  MUSIC_PLATFORM_DEFAULT_FLAGS,
-  lockedPlatformKeys,
 } from "@/lib/music-platform-flags";
 
 beforeEach(() => {

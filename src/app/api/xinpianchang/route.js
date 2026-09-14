@@ -1,5 +1,6 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
+import { parseFail, parseOk } from "@/lib/parser-kit";
 
 export const runtime = "nodejs";
 
@@ -38,27 +39,23 @@ async function xinpianchangParse(shareUrl) {
   const extracted = extractFromHtml(html);
 
   if (!extracted.nextData) {
-    return { code: 400, msg: "新片场页面无 __NEXT_DATA__" };
+    return parseFail(400, "新片场页面无 __NEXT_DATA__");
   }
 
   const data = extracted.nextData?.props?.pageProps?.detail;
   const videoUrl = data?.video?.content?.progressive?.[0]?.url;
 
   if (!videoUrl) {
-    return { code: 404, msg: "未找到新片场视频地址" };
+    return parseFail(404, "未找到新片场视频地址");
   }
 
-  return {
-    code: 200,
-    msg: "解析成功",
-    data: {
-      title: data.title || "",
-      author: data.author?.userinfo?.username || "",
-      avatar: data.author?.userinfo?.avatar || "",
-      cover: data.cover || "",
-      url: videoUrl,
-    },
-  };
+  return parseOk({
+    title: data.title || "",
+    author: data.author?.userinfo?.username || "",
+    avatar: data.author?.userinfo?.avatar || "",
+    cover: data.cover || "",
+    url: videoUrl,
+  });
 }
 
 export const GET = createApiHandler(xinpianchangParse);

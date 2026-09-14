@@ -10,11 +10,12 @@ import {
 } from "@/lib/api-utils";
 import { honeypotResponse } from "@/lib/honeypot";
 import { normalizeResult } from "@/lib/normalize-result";
+import { TIMEOUT } from "@/lib/http";
 
 export const runtime = "nodejs";
 
 const UPSTREAM_BASE = "https://api.amll.dev";
-const UPSTREAM_TIMEOUT_MS = 8000;
+const UPSTREAM_TIMEOUT_MS = TIMEOUT.DEFAULT;
 
 /**
  * AMLL 词库（amll.dev）逐字歌词代理：

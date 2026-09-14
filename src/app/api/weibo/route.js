@@ -1,4 +1,5 @@
 import { createApiHandler } from "@/lib/api-middleware";
+import { TIMEOUT } from "@/lib/http";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ const UA_MOBILE =
   "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1";
 const UA_DESKTOP =
   "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0 Safari/537.36";
-const TIMEOUT_MS = 8000;
+const TIMEOUT_MS = TIMEOUT.DEFAULT;
 
 /** 访客 Cookie 模块级缓存（SUB 有效期较长，避免每次解析都跑两趟访客流程） */
 let visitorCookieCache = "";

@@ -155,6 +155,8 @@ export function trackDownloadSpec(opts: {
       br,
       bin: "1",
       title: item?.name || "",
+      // 艺术家随下载请求下发，服务端拼进文件名「曲名 - 艺术家 - 音质标签.ext」
+      artist: (item?.artist || []).filter(Boolean).join(", "),
     });
     return { kind: "bin", url: `/api/music?${qs.toString()}` };
   }
@@ -164,4 +166,109 @@ export function trackDownloadSpec(opts: {
     url: direct.url,
     fallbackDirect: channel === "gd" && isDirectUsed(),
   };
+}
+
+/** 下载失败：message 是可直接展示给用户的文案（来自服务端 msg 或本地兜底） */
+export class MusicDownloadError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "MusicDownloadError";
+  }
+}
+
+/** 响应 Content-Type 可否作为音频落盘（与服务端 url.js isBinMediaType 同口径） */
+function isMediaContentType(contentType: string): boolean {
+  const t = (contentType || "").split(";")[0].trim().toLowerCase();
+  if (!t) return true; // 上游未声明时按音频放行
+  return (
+    t.startsWith("audio/") || t.startsWith("video/") || t.includes("octet-stream")
+  );
+}
+
+/** 从 Content-Disposition 取文件名：RFC 5987 filename* 优先，其次 filename="..." */
+export function fileNameFromDisposition(
+  header: string | null,
+  fallback: string
+): string {
+  const raw = header || "";
+  const star = /filename\*\s*=\s*UTF-8''([^;]+)/i.exec(raw);
+  if (star?.[1]) {
+    try {
+      return decodeURIComponent(star[1]);
+    } catch {
+      // 编码异常（非标准转义）时继续试普通 filename
+    }
+  }
+  const plain =
+    /filename\s*=\s*"([^"]+)"/i.exec(raw) || /filename\s*=\s*([^;]+)/i.exec(raw);
+  return plain?.[1]?.trim() || fallback;
+}
+
+/** 触发浏览器保存：临时 <a> + objectURL（与 utils/downloadImages 同款） */
+function saveBlob(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * 经同源 bin 字节代理下载音频，返回落盘文件名。
+ *
+ * **为什么不直接用 `<a download href={binUrl}>`**：那样浏览器会把服务端的
+ * **错误响应也照存成文件**。上游偶发失败（防盗链 403 / 直链过期 / 风控 JSON）时
+ * 用户点「下载」会得到一个内容是 JSON 的 `.json` 文件，全程没有任何失败提示——
+ * 这正是「点了下载结果下来一个 JSON」的来源。这里先取回响应、确认状态与内容
+ * 类型是音频后再落盘；失败抛 MusicDownloadError，由 UI 弹提示而不是静默存坏文件。
+ *
+ * 代价是整首先进内存（10~50MB，音频量级可接受），换来失败可感知。
+ */
+export async function downloadBinTrack(opts: {
+  url: string;
+  fallbackName?: string;
+  signal?: AbortSignal;
+}): Promise<string> {
+  const { url, fallbackName = "track.mp3", signal } = opts;
+  let res: Response;
+  try {
+    res = await fetch(url, { signal });
+  } catch (e) {
+    if ((e as Error)?.name === "AbortError") throw e;
+    throw new MusicDownloadError("下载请求失败，请检查网络后重试");
+  }
+
+  if (!res.ok) {
+    let msg = "";
+    try {
+      const body = (await res.json()) as { msg?: unknown };
+      if (typeof body?.msg === "string") msg = body.msg;
+    } catch {
+      // 非 JSON 错误体：用状态码兜底
+    }
+    throw new MusicDownloadError(
+      msg || `下载失败（HTTP ${res.status}），请稍后重试`
+    );
+  }
+
+  const contentType = res.headers.get("content-type") || "";
+  if (!isMediaContentType(contentType)) {
+    throw new MusicDownloadError(
+      "源站返回了非音频内容（链接可能已过期），请稍后重试"
+    );
+  }
+
+  const blob = await res.blob();
+  if (!blob.size) {
+    throw new MusicDownloadError("源站返回了空文件，请稍后重试");
+  }
+  const name = fileNameFromDisposition(
+    res.headers.get("content-disposition"),
+    fallbackName
+  );
+  saveBlob(blob, name);
+  return name;
 }

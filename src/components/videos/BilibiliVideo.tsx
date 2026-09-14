@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { ApiResponse, ParsedVideoItem } from "@/types/api";
 import { formatCount } from "@/lib/format";

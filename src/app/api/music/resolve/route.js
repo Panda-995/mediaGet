@@ -1,4 +1,4 @@
-import { UA_CHROME_WIN126 } from "@/lib/http";
+import { TIMEOUT, UA_CHROME_WIN126 } from "@/lib/http";
 import {
   beijingNow,
   getCachedResponse,
@@ -76,8 +76,9 @@ export const runtime = "nodejs";
  */
 
 const LINK_MAX_LEN = 2000;
+// REDIRECT_TIMEOUT（7s）不在公共档位上，是按短链实测取的，保持原值
 const REDIRECT_TIMEOUT = 7000;
-const META_TIMEOUT = 8000;
+const META_TIMEOUT = TIMEOUT.DEFAULT;
 
 /** QQ 官方歌曲信息接口请求头（与 qqmusic-id.js 同源） */
 const QQ_META_HEADERS = {

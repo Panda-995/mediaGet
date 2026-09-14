@@ -1,5 +1,7 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
+import { TIMEOUT, fetchWithTimeout } from "@/lib/http";
+import { parseFail, parseOk } from "@/lib/parser-kit";
 
 export const runtime = "nodejs";
 
@@ -9,9 +11,9 @@ async function getMusicInfo(url) {
     
     // 提取track_id
     if (url.includes("qishui.douyin.com")) {
-      const response = await fetch(url, { 
+      const response = await fetchWithTimeout(url, {
         redirect: "follow",
-        signal: AbortSignal.timeout(5000),
+        timeoutMs: TIMEOUT.SHORT,
       });
       const redirectUrl = response.url;
       const match = redirectUrl.match(/track_id=(\d+)/);
@@ -22,12 +24,12 @@ async function getMusicInfo(url) {
     }
 
     if (!trackId) {
-      return { code: 400, msg: "无法提取音乐ID" };
+      return parseFail(400, "无法提取音乐ID");
     }
 
-    const response = await fetch(
+    const response = await fetchWithTimeout(
       `https://music.douyin.com/qishui/share/track?track_id=${trackId}`,
-      { signal: AbortSignal.timeout(8000) }
+      { timeoutMs: TIMEOUT.DEFAULT }
     );
     
     const html = await response.text();
@@ -79,23 +81,19 @@ async function getMusicInfo(url) {
     }
 
     if (!musicUrl && !title) {
-      return { code: 404, msg: "未找到音乐信息" };
+      return parseFail(404, "未找到音乐信息");
     }
 
-    return {
-      code: 200,
-      msg: "解析成功",
-      data: {
-        name: title,
-        url: musicUrl,
-        cover: cover,
-        lyrics: lyrics,
-        core: "汽水音乐",
-      },
-    };
+    return parseOk({
+      name: title,
+      url: musicUrl,
+      cover: cover,
+      lyrics: lyrics,
+      core: "汽水音乐",
+    });
   } catch (error) {
     logger.error("qsmusic parse error:", error);
-    return { code: 500, msg: "服务器内部错误" };
+    return parseFail(500, "服务器内部错误");
   }
 }
 

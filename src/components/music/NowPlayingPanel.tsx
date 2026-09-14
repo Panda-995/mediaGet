@@ -46,6 +46,10 @@ export interface NowPlayingPanelProps {
   onCoverError: () => void;
   copyUrl: () => void;
   onShowInfo: (item: SearchItem, index: number) => void;
+  /** 点击下载（bin 分支：同源代理取回字节并校验后才落盘）；external 分支不触发 */
+  onDownload?: () => void;
+  /** 下载中：字节取回前按钮转圈，避免重复点击 */
+  downloading?: boolean;
   /** 收藏按钮动作完成回调（父层弹轻提示）；不传则静默 */
   onFavoriteToggled?: (result: { added: boolean; persistFailed: boolean }) => void;
 }
@@ -72,6 +76,8 @@ export default function NowPlayingPanel({
   onCoverError,
   copyUrl,
   onShowInfo,
+  onDownload,
+  downloading,
   onFavoriteToggled,
 }: NowPlayingPanelProps) {
   /** 下载入口决策（源通道引擎统一入口，见 music-client trackDownloadSpec） */
@@ -164,13 +170,16 @@ export default function NowPlayingPanel({
         </IconButton>
         {download ? (
           download.kind === "bin" ? (
-            // GD 源 + 同源代理可用：经同源 bin 字节代理下载（带音质标签文件名）
+            // GD 源 + 同源代理可用：走同源 bin 字节下载（带音质标签文件名）。
+            // 这里刻意不用 <a download>：那样服务端错误响应也会被浏览器存成文件
+            // （用户会得到一个内容是 JSON 的 .json），且没有任何失败提示。
+            // 改为点击后由父层取回字节、校验类型再落盘，失败弹轻提示。
             <IconButton
-              href={download.url}
-              download
-              title="下载歌曲"
+              onClick={onDownload}
+              disabled={downloading || !onDownload}
+              title={downloading ? "正在下载…" : "下载歌曲"}
               ariaLabel="下载歌曲">
-              <Download />
+              {downloading ? <Loader2 className="mp-spin" /> : <Download />}
             </IconButton>
           ) : (
             // 真实源地址即文件：GD 直连模式 → 新标签打开源文件后另存

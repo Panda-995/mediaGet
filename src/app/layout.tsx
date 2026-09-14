@@ -93,7 +93,9 @@ export default function RootLayout({
       <head>
         {/* 主题初始化：body 渲染前同步挂载 class，避免闪烁（FOUC）
             主题三态：light / dark / system（跟随设备，默认）
-            存储值缺省或为 system 时，跟随系统偏好并监听其变化实时切换 */}
+            存储值缺省或为 system 时，跟随系统偏好并监听其变化实时切换
+            脚本内两处 catch 为有意静默：隐私模式下 localStorage 与 matchMedia
+            都可能直接抛异常，此处只能静默回退 system，无条件打日志 */}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){function mode(){try{var t=localStorage.getItem("theme");return t==="light"||t==="dark"||t==="system"?t:"system";}catch(e){return "system";}}function apply(){var m=mode();var d=m==="dark"||(m==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);var el=document.documentElement;el.classList.remove("dark","light");el.classList.add(d?"dark":"light");}apply();try{window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change",apply);}catch(e){}})();`,

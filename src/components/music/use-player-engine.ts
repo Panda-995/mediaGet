@@ -8,8 +8,9 @@
  *   暴露的「播放会话快照（picked/playing/direct/br/currentTime/…）+ 播放命令（playTrack /
  *   togglePlay / seek / switchQuality / playPrev / playNext）」，不再自己持有 <audio>、
  *   拼直链、处理自动播放解锁 / 直链就绪续播 / 音质热切换等策略；
- * - 传输层原语集中在下方 transport 区块：audioProps（<audio {...audioProps} />）、togglePlay、
- *   seek、unlockAutoplay 与 timeupdate/ended 等事件。
+ * - 传输层原语（元素持有 / 音量静音循环同步 / play-pause-seek / 自动播放解锁 / 直链就绪续播）
+ *   已抽到同层 `use-audio-transport.ts`：本文件只把传输事件翻译成播放会话语义，
+ *   换播放引擎（HLS、iframe、别的解码后端）时替换那一层即可。
  *
  * 未来接入新的播放引擎（HLS 流、iframe 播放器、不同解析后端…）：
  * 保持「快照 + 命令」这套界面不变，替换/扩展 transport 区块的实现即可，UI 层无需改动；
@@ -21,13 +22,7 @@
  * 换源候选的挑选与合并（来源 A 队列内 / C 共享缓存的收敛与排序）在同层 alt-candidates.ts：
  * 纯函数、不碰 <audio> 与 React 状态，可独立阅读与测试；本文件只负责拿着结果逐个尝试。
  */
-import {
-  useCallback,
-  useEffect,
-  useRef,
-  useState,
-  type SyntheticEvent,
-} from "react";
+import { useEffect, useRef, useState } from "react";
 import { BR_DEFAULT, BR_LABEL } from "@/types/music";
 import {
   crossSearchPlayableSourceKeys,
@@ -58,6 +53,10 @@ import {
   pickQueueAlternatives,
   type AltCandidate,
 } from "./alt-candidates";
+import { useAudioTransport } from "./use-audio-transport";
+
+/** 传输层绑定类型（<audio {...audioProps} />）由传输层定义，此处再导出以保持上层导入路径不变 */
+export type { AudioElementProps } from "./use-audio-transport";
 /** 播放引擎的“队列与通道上下文”。list/source 变化时 hook 随之刷新，无需重新创建引擎 */
 export interface UsePlayerEngineOptions {
   /** 当前播放队列（搜索结果 / 解析单曲列表）；null = 队列已清空 */
@@ -70,20 +69,6 @@ export interface UsePlayerEngineOptions {
   fetchMorePage: () => Promise<void>;
   /** 轻提示（音质切换成功 / 失败、直链失败等） */
   notify: (kind: "ok" | "err", text: string) => void;
-}
-
-/** 绑定到 <audio> 元素的受控属性集（ref / src / 传输事件）。JSX 里直接 <audio {...audioProps} /> */
-export interface AudioElementProps {
-  ref: (el: HTMLAudioElement | null) => void;
-  src?: string;
-  preload: "metadata";
-  onPlay: () => void;
-  onPause: () => void;
-  onEnded: () => void;
-  onError: () => void;
-  onTimeUpdate: (e: SyntheticEvent<HTMLAudioElement>) => void;
-  onLoadedMetadata: (e: SyntheticEvent<HTMLAudioElement>) => void;
-  onDurationChange: (e: SyntheticEvent<HTMLAudioElement>) => void;
 }
 
 /** 播放失败发生的阶段：resolve = 取直链失败；play = 直链已就绪但 <audio> 媒体层报错（防盗链/解码/失效） */
@@ -152,17 +137,12 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   /** 自动换源阶段的动态文案（如“正在跨音源现搜”），空串时 UI 用默认文案 */
   const [altNote, setAltNote] = useState("");
 
-  // —— transport（HTML5 Audio 播放引擎）——
-  const audioRef = useRef<HTMLAudioElement | null>(null);
+  // —— 播放会话 refs（<audio> 元素与其状态在 use-audio-transport 内）——
   const directAbortRef = useRef<AbortController | null>(null);
   /** 音质热切换时旧直链的播放位置（秒），新源就绪后从该处续播 */
   const resumeAtRef = useRef(0);
   /** 用户本次手势是否期望自动播放（点歌/切音质时置位，直链就绪后消费） */
   const autoplayRef = useRef(false);
-  /** 跟随 muted 状态，供异步播放回调读取最新静音设置 */
-  const mutedRef = useRef(muted);
-  /** 当前已生效直链 URL（供 <audio> error 判定该错误是否属于“当前播放资源”） */
-  const resourceUrlRef = useRef<string | null>(null);
   /** 本次点歌的自动换源轨迹：已尝试的 (source,id) 与已尝试次数（有界防失控） */
   const altStateRef = useRef<{ triedKeys: Set<string>; count: number }>({
     triedKeys: new Set(),
@@ -176,15 +156,6 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   const altTokenRef = useRef(0);
   /** 跨源现搜（来源 B）的 AbortController：手动切歌/重置时中止在途搜索，省请求防陈旧结果 */
   const crossAbortRef = useRef<AbortController | null>(null);
-
-  /** 稳定 ref 回调：挂载/卸载 <audio> 元素（避免每次渲染更换引用导致元素短暂置空） */
-  const setAudioEl = useCallback((el: HTMLAudioElement | null) => {
-    audioRef.current = el;
-  }, []);
-
-  useEffect(() => {
-    mutedRef.current = muted;
-  }, [muted]);
 
   useEffect(() => {
     return () => {
@@ -213,6 +184,41 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     setAltNote("");
   };
 
+  // —— 传输层（HTML5 Audio 播放引擎）：元素持有与播放原语见 use-audio-transport，
+  //    这里只把传输事件翻译成播放会话语义。onEnded / onError 用箭头包一层：
+  //    它们在下方定义，箭头把取值推迟到事件真正触发时 ——
+  const transport = useAudioTransport({
+    src: direct?.url,
+    volume,
+    muted,
+    loop,
+    seeking,
+    duration,
+    onSeek: setCurrentTime,
+    onPlayRejected: () => setPlaying(false),
+    onPlay: () => {
+      setPlaying(true);
+      // 层①写入条件：**真实出声**才算播放成功（取到直链不算，直链可播≠能播）
+      const it = picked;
+      if (it) {
+        reportPlaybackCandidate(it);
+        reportSourceHealth(it.source || source, true, "play");
+      }
+    },
+    onPause: () => setPlaying(false),
+    onEnded: () => handleEnded(),
+    onError: () => handleMediaError(),
+    onTimeUpdate: (e) => {
+      // 无直链（切歌加载中）时不回写进度：旧 <audio> 被 unlockAutoplay 静音
+      // 试播解锁时仍会在旧 src 上触发 timeupdate，残留的旧时长会让进度条
+      // 在加载期间继续前进
+      if (!direct?.url) return;
+      setCurrentTime(e.currentTarget.currentTime);
+    },
+    onLoadedMetadata: (e) => setDuration(e.currentTarget.duration || 0),
+    onDurationChange: (e) => setDuration(e.currentTarget.duration || 0),
+  });
+
   // 当列表切换时，若当前曲目仍在新列表中则同步索引，否则清空索引
   useEffect(() => {
     if (!picked || !list) {
@@ -227,81 +233,20 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
 
   // 直链变化：复位播放状态；若是本次点歌/换音质触发的自动播放，则等资源就绪后播放。
   // 音质热切换（播放中切档）时旧直链不打断，等新源可播后从这里 seek 回旧位置续播。
+  const { setResourceUrl, playWhenReady } = transport;
   useEffect(() => {
-    resourceUrlRef.current = direct?.url ?? null;
+    setResourceUrl(direct?.url ?? null);
     if (!direct?.url) {
       setPlaying(false);
       return;
     }
-    const audio = audioRef.current;
-    if (!audio) return;
+    // 续播位置与自动播放意图由本轮消费掉（下一次直链变化重新置位）
     const resumeAt = resumeAtRef.current;
     resumeAtRef.current = 0;
-    const startPlay = () => {
-      // 新源可播后恢复旧直链的播放位置
-      if (resumeAt > 0) {
-        try {
-          const cap = Number.isFinite(audio.duration) ? audio.duration : Infinity;
-          audio.currentTime = Math.min(resumeAt, cap);
-          // 暂停态下 timeupdate 未必触发：主动同步进度条，避免恢复会话后停在 0:00
-          setCurrentTime(audio.currentTime);
-        } catch {
-          /* 个别源暂不可 seek，忽略 */
-        }
-      }
-      if (!autoplayRef.current) return;
-      autoplayRef.current = false;
-      const go = () => {
-        audio.muted = mutedRef.current;
-        const p = audio.play();
-        if (p && typeof p.catch === "function") {
-          p.catch(() => {
-            // 自动播放策略拦截：静音起播成功后把音量/静音还原为用户设置
-            audio.muted = true;
-            audio
-              .play()
-              .then(() => {
-                audio.muted = mutedRef.current;
-              })
-              .catch(() => setPlaying(false));
-          });
-        }
-      };
-      go();
-    };
-    const timer = setTimeout(() => {
-      if (audio.readyState >= 2) startPlay();
-      else audio.addEventListener("canplay", startPlay, { once: true });
-    }, 0);
-    return () => clearTimeout(timer);
-  }, [direct?.url]);
-
-  // 音频音量 / 静音 / 循环同步到 transport
-  useEffect(() => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    audio.volume = muted ? 0 : volume;
-    audio.muted = muted;
-    audio.loop = loop;
-  }, [volume, muted, loop]);
-
-  /**
-   * 在当前用户手势内“静音试播”一次以解锁浏览器自动播放策略，
-   * 这样直链异步就绪后的 play() 不会被拦截。静音会保持到正式播放前按用户设置恢复。
-   */
-  const unlockAutoplay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    try {
-      // 立即停掉上一首，避免切换串音
-      if (!audio.paused) audio.pause();
-      audio.muted = true;
-      const p = audio.play();
-      if (p && typeof p.catch === "function") p.catch(() => {});
-    } catch {
-      /* 元素暂无资源时 play 可能同步抛错，忽略 */
-    }
-  };
+    const autoplay = autoplayRef.current;
+    autoplayRef.current = false;
+    return playWhenReady({ resumeAt, autoplay, onSeeked: setCurrentTime });
+  }, [direct?.url, setResourceUrl, playWhenReady]);
 
   /**
    * 跨源现搜兜底（候选来源 B）：当前队列内已无可自动接续的版本时，拿失败原曲
@@ -499,6 +444,11 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     setDirect(null);
     setFetching(true);
     setPlayError("");
+    // 切歌即复位旧进度：避免上一首的 currentTime/duration 在直链加载期间仍
+    // 驱动进度条前进（旧 <audio> 被 unlockAutoplay 静音试播解锁时会继续
+    // timeupdate，残留的旧时长会让 progressPercent 继续增长）
+    setCurrentTime(0);
+    setDuration(0);
     autoplayRef.current = false;
 
     directAbortRef.current?.abort();
@@ -506,7 +456,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     directAbortRef.current = controller;
 
     // 点歌发生在用户手势内，先解锁自动播放（自动换源不在手势内，unlock 为空操作也无害）
-    unlockAutoplay();
+    transport.unlockAutoplay();
 
     try {
       const data = await requestPlayDirect(
@@ -524,11 +474,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
       return true;
     } catch (err) {
       if (controller.signal.aborted) return false;
-      const audio = audioRef.current;
-      if (audio) {
-        audio.pause();
-        audio.muted = mutedRef.current;
-      }
+      transport.pauseAndRestoreMuted();
       const msg =
         err instanceof Error && err.message
           ? err.message
@@ -582,7 +528,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
   const handleMediaError = () => {
     // 取直链/自动换源进行中：迟到或旧资源的媒体报错不处理，避免覆盖当前流程状态
     if (fetching || altInFlightRef.current) return;
-    const audio = audioRef.current;
+    const audio = transport.audioRef.current;
     if (!audio) return;
     const code = audio.error?.code;
     if (code == null || code === 1) return; // MEDIA_ERR_ABORTED 忽略
@@ -590,7 +536,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     if (!item) return;
     // 仅当错误属于“当前生效资源”时才处理，避免旧资源迟到的 error 干扰新播放
     const src = audio.currentSrc || audio.src || "";
-    const cur = resourceUrlRef.current;
+    const cur = transport.resourceUrlRef.current;
     if (src && cur && !isSameMediaSrc(src, cur)) return;
     setPlaying(false);
     // 切档后窗口内媒体报错 = 该音质源不可播（非歌曲级失败），提示用户换档而不整曲换源
@@ -634,28 +580,10 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
 
   const handleEnded = () => {
     if (loop) {
-      audioRef.current?.play().catch(() => setPlaying(false));
+      transport.play();
     } else {
       playNext();
     }
-  };
-
-  const togglePlay = () => {
-    const audio = audioRef.current;
-    if (!audio) return;
-    if (audio.paused) {
-      audio.play().catch(() => setPlaying(false));
-    } else {
-      audio.pause();
-    }
-  };
-
-  const seek = (value: number) => {
-    const audio = audioRef.current;
-    if (!audio || !duration) return;
-    const t = Math.min(duration, Math.max(0, value));
-    audio.currentTime = t;
-    setCurrentTime(t);
   };
 
   /**
@@ -666,7 +594,7 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     if (!picked) return;
     // 目标即当前档且当前直链有效时无需重复取流
     if (nextBr === br && direct) return;
-    const audio = audioRef.current;
+    const audio = transport.audioRef.current;
     const wasLive = !!audio && !audio.paused;
     const prevBr = br;
     const hadStream = !!direct?.url;
@@ -727,28 +655,6 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     }
   };
 
-  // —— transport 事件（HTML5 Audio 播放引擎）→ 快照 ——
-  const audioProps: AudioElementProps = {
-    ref: setAudioEl,
-    src: direct?.url,
-    preload: "metadata",
-    onPlay: () => {
-      setPlaying(true);
-      // 层①写入条件：**真实出声**才算播放成功（取到直链不算，直链可播≠能播）
-      const it = picked;
-      if (it) {
-        reportPlaybackCandidate(it);
-        reportSourceHealth(it.source || source, true, "play");
-      }
-    },
-    onPause: () => setPlaying(false),
-    onEnded: handleEnded,
-    onError: handleMediaError,
-    onTimeUpdate: (e) => !seeking && setCurrentTime(e.currentTarget.currentTime),
-    onLoadedMetadata: (e) => setDuration(e.currentTarget.duration || 0),
-    onDurationChange: (e) => setDuration(e.currentTarget.duration || 0),
-  };
-
   return {
     // 播放会话快照（UI 渲染依据）
     picked,
@@ -772,8 +678,8 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     restorePlayback,
     playPrev,
     playNext,
-    togglePlay,
-    seek,
+    togglePlay: transport.togglePlay,
+    seek: transport.seek,
     switchQuality,
     setVolume,
     setMuted,
@@ -781,6 +687,6 @@ export function usePlayerEngine(options: UsePlayerEngineOptions) {
     setSeeking,
     resetSession,
     // transport 绑定（渲染 <audio {...audioProps} />）
-    audioProps,
+    audioProps: transport.audioProps,
   };
 }

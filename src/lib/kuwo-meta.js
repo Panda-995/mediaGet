@@ -13,6 +13,8 @@
  *   搜索返回的 id 与分享链接 rid 同形）。
  */
 
+import { TIMEOUT } from "@/lib/http";
+
 /** 移动端 UA + H5 来源（该接口对桌面 UA 亦可用，此处统一按浏览器请求） */
 export const KUWO_META_HEADERS = {
   "User-Agent":
@@ -22,7 +24,7 @@ export const KUWO_META_HEADERS = {
 };
 
 /** 详情请求超时（ms） */
-export const KUWO_META_TIMEOUT = 8000;
+export const KUWO_META_TIMEOUT = TIMEOUT.DEFAULT;
 
 /** 酷我 rid：纯数字，5~12 位（www.kuwo.cn/play_detail/<rid>） */
 const KUWO_RID_RE = /^\d{5,12}$/;

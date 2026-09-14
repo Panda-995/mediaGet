@@ -13,10 +13,10 @@
  * 安全：目标 URL 由查询参数决定，入口统一走 lib/proxy-guard.js
  * （IP 黑名单 + 限流 + SSRF 白名单，后者带 PROXY_SSRF_STRICT 灰度开关）。
  */
-import { UA_EDGE_WIN129 } from "@/lib/http";
+import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
-import { createTtlCache, getClientIP } from "@/lib/api-utils";
+import { createTtlCache, getClientIP, logger } from "@/lib/api-utils";
 import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
 
 // 有界 TTL 缓存：此前是无上限 Map，配合「url 完全可控 + 无限流」可被撑爆内存
@@ -91,8 +91,9 @@ export async function GET(request) {
         // 备选同样过 SSRF：只有能进入候选列表的 URL 才会被真正 fetch
         if (checkProxyUrl(u.href, "image", clientIP)) continue;
         candidates.push(u);
-      } catch {
-        // 忽略非法备选
+      } catch (e) {
+        // 忽略非法备选（不阻断主 URL）；不打印 URL 本身——可能带签名 token
+        logger.warn("[image] 忽略非法 fallback 候选:", e?.message);
       }
     }
   }
@@ -123,7 +124,7 @@ export async function GET(request) {
     try {
       upstream = await fetch(candidate.href, {
         headers,
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(TIMEOUT.LONG),
       });
     } catch (e) {
       lastError = `Upstream fetch failed: ${e.message}`;

@@ -98,6 +98,9 @@ export function createTtlCache({ max = 500, ttlMs }) {
         store.delete(oldest);
       }
     },
+    delete(key) {
+      return store.delete(key);
+    },
     get size() {
       return store.size;
     },
@@ -132,6 +135,16 @@ export const getCachedResponse = (url) => {
 export const setCacheResponse = (url, data) => {
   cache.set(url, data);
   logger.log('Cache set for:', url.substring(0, 50) + '...');
+};
+
+/**
+ * 主动失效一条缓存：缓存内容已被证伪时调用（典型是解析出的直链在下载阶段
+ * 报错 / 返回非音频）。不失效的话，同一条死链会在整个 TTL 内被反复复用，
+ * 用户点重试拿到的永远是同一个坏结果，只能等缓存自然过期。
+ */
+export const deleteCachedResponse = (url) => {
+  cache.delete(url);
+  logger.log('Cache deleted:', url.substring(0, 50) + '...');
 };
 
 // 速率限制相关配置（per-IP 滑动窗口）

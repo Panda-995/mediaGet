@@ -1,9 +1,10 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image, { type ImageProps } from "next/image";
 import { Download, ExternalLink, Music, Pause, Play, X } from "lucide-react";
 import { ApiResponse, ParseData } from "@/types/api";
 import { formatCount } from "@/lib/format";
+import { TIMEOUT } from "@/lib/http";
 import { scrollToElement } from "@/lib/dom";
 import { sanitizeFilename } from "@/utils/filename";
 import { buildVideoProxyUrl } from "@/utils/videoProxy";
@@ -118,7 +119,7 @@ const YT_STATE_PLAYING = 1;
 type PlayerMode = "api" | "postmessage" | "local" | "plain";
 
 /** 加载失败判定窗口：展开后该时间内无任何播放器就绪/状态信号则判定失败 */
-const EMBED_FAIL_TIMEOUT = 8000;
+const EMBED_FAIL_TIMEOUT = TIMEOUT.DEFAULT;
 
 /** postMessage 命令的目标源（iframe 实际 origin） */
 const YT_EMBED_ORIGIN = "https://www.youtube-nocookie.com";

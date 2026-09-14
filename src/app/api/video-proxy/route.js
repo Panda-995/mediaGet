@@ -18,7 +18,7 @@
  * 安全：目标 URL 由查询参数决定，入口统一走 lib/proxy-guard.js
  * （IP 黑名单 + 限流 + SSRF 白名单，后者带 PROXY_SSRF_STRICT 灰度开关）。
  */
-import { UA_EDGE_WIN129 } from "@/lib/http";
+import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
 import { getClientIP, logger } from "@/lib/api-utils";
@@ -135,12 +135,12 @@ export async function GET(request) {
     headers.Range = range;
   }
 
-  const FIRST_BYTE_TIMEOUT_MS = 30000;
+  const FIRST_BYTE_TIMEOUT_MS = TIMEOUT.DOWNLOAD;
   const FIRST_BYTE_TIMEOUT = new Error("first-byte timeout");
   // twimg 连接不稳定（间歇性重置/首字节超时/403）：用更短首字节超时 + 失败重试，
   // 瞬时失败重试大概率恢复，显著提升 X 视频内嵌播放成功率。
   const isTwimg = isTwimgHost(target.hostname);
-  const TWIMG_FIRST_BYTE_TIMEOUT_MS = 8000;
+  const TWIMG_FIRST_BYTE_TIMEOUT_MS = TIMEOUT.DEFAULT;
   const MAX_TWIMG_ATTEMPTS = 3; // 含首次，最多 3 次尝试
 
   // 首字节超时：只覆盖到收到上游响应头为止。

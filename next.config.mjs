@@ -46,70 +46,10 @@ const nextConfig = {
     );
   },
   images: {
-    // Cloudflare Workers 上无内置图片优化器，禁用优化、原图直出（配合前端 <Image unoptimized>）
+    // Cloudflare Workers 上无内置图片优化器，禁用优化、原图直出（配合前端 <Image unoptimized>）。
+    // 注意：unoptimized 为 true 时 remotePatterns 完全不参与校验（没有请求会走优化器），
+    // 此前手写的 12 组图床 remotePatterns 属死配置，已删除；若日后开启优化需一并补回。
     unoptimized: true,
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**.douyinpic.com",
-      },
-      {
-        protocol: "https",
-        hostname: "i0.hdslb.com",
-      },
-      {
-        protocol: "http",
-        hostname: "i0.hdslb.com",
-      },
-      {
-        protocol: "https",
-        hostname: "**.yximgs.com",
-      },
-      {
-        protocol: "http",
-        hostname: "**.yximgs.com",
-      },
-      {
-        protocol: "https",
-        hostname: "**.kwimgs.com",
-      },
-      {
-        protocol: "http",
-        hostname: "**.kwimgs.com",
-      },
-      {
-        protocol: "https",
-        hostname: "**.xhscdn.com",
-      },
-      {
-        protocol: "http",
-        hostname: "**.xhscdn.com",
-      },
-      {
-        protocol: "https",
-        hostname: "**.sinaimg.cn",
-      },
-      {
-        protocol: "http",
-        hostname: "**.sinaimg.cn",
-      },
-      {
-        protocol: "https",
-        hostname: "**.pstatp.com",
-      },
-      {
-        protocol: "http",
-        hostname: "**.pstatp.com",
-      },
-      {
-        protocol: "https",
-        hostname: "**.byteimg.com",
-      },
-      {
-        protocol: "http",
-        hostname: "**.byteimg.com",
-      },
-    ],
   },
   experimental: {
     optimizePackageImports: ["tailwindcss"],

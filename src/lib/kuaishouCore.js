@@ -1,7 +1,14 @@
 // 共享的快手解析核心逻辑（供 Next 路由与 Cloudflare Workers 复用）
 
 // Edge/Workers 环境不启用 DOM 解析，直接使用字符串/正则方案
-import { UA_IOS_SAFARI_16_6 } from "@/lib/http";
+import { TIMEOUT, UA_IOS_SAFARI_16_6 } from "@/lib/http";
+
+/**
+ * 分享页抓取超时：10s。**不在公共档位上**（DEFAULT 8s / LONG 15s），是快手链路的实测取值，
+ * 归到相邻档会改变行为，故就地具名（见 docs/REFACTOR-PLAN.md P2-2）。
+ */
+const PAGE_FETCH_TIMEOUT_MS = 10_000;
+
 async function initDOMParser() {
   return null;
 }
@@ -75,6 +82,7 @@ class KuaishouParser {
       const videoInfo = await this.parseVideoInfo(htmlContent);
       return videoInfo;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -99,7 +107,7 @@ class KuaishouParser {
       const response = await fetch(url, {
         redirect: "follow",
         headers: { "User-Agent": this.headers["User-Agent"] },
-        signal: AbortSignal.timeout(10000),
+        signal: AbortSignal.timeout(PAGE_FETCH_TIMEOUT_MS),
       });
       return response.url || url;
     } catch {
@@ -119,12 +127,13 @@ class KuaishouParser {
     try {
       const response = await fetch(url, {
         headers: this.headers,
-        signal: AbortSignal.timeout(15000),
+        signal: AbortSignal.timeout(TIMEOUT.LONG),
       });
       if (!response.ok) return null;
       const text = await response.text();
       return text;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -150,6 +159,7 @@ class KuaishouParser {
       if (result) return result;
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -166,6 +176,7 @@ class KuaishouParser {
       if (result) return result;
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -217,6 +228,7 @@ class KuaishouParser {
       }
       return formatResponse(200, "解析成功", videoData);
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -386,10 +398,14 @@ class KuaishouParser {
             const result = this.extractVideoDataFromApolloState(defaultClient);
             if (result) return result;
           }
-        } catch {}
+        } catch {
+          // 有意静默：候选提取路径逐条试，某条不适用（结构不匹配 / JSON 非法）
+          // 就换下一条；不打日志——部分路径在递归中执行，日志会放大成噪声。
+          }
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -421,6 +437,7 @@ class KuaishouParser {
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -444,12 +461,16 @@ class KuaishouParser {
                   this.extractVideoDataFromApolloState(defaultClient);
                 if (result) return result;
               }
-            } catch {}
+            } catch {
+          // 有意静默：候选提取路径逐条试，某条不适用（结构不匹配 / JSON 非法）
+          // 就换下一条；不打日志——部分路径在递归中执行，日志会放大成噪声。
+          }
           }
         }
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -475,12 +496,16 @@ class KuaishouParser {
               const data = JSON.parse(match[1]);
               const result = this.findVideoDataDeep(data);
               if (result) return result;
-            } catch {}
+            } catch {
+          // 有意静默：候选提取路径逐条试，某条不适用（结构不匹配 / JSON 非法）
+          // 就换下一条；不打日志——部分路径在递归中执行，日志会放大成噪声。
+          }
           }
         }
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -509,6 +534,7 @@ class KuaishouParser {
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -539,6 +565,7 @@ class KuaishouParser {
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -615,7 +642,10 @@ class KuaishouParser {
         try {
           const result = this.findVideoDataDeep(obj[key], depth + 1);
           if (result) return result;
-        } catch {}
+        } catch {
+          // 有意静默：候选提取路径逐条试，某条不适用（结构不匹配 / JSON 非法）
+          // 就换下一条；不打日志——部分路径在递归中执行，日志会放大成噪声。
+          }
       }
     }
     return null;
@@ -799,6 +829,7 @@ class KuaishouParser {
       }
       return this.extractFromJsonFragments(htmlContent);
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }
@@ -837,12 +868,16 @@ class KuaishouParser {
                   ...data,
                 });
               }
-            } catch {}
+            } catch {
+          // 有意静默：候选提取路径逐条试，某条不适用（结构不匹配 / JSON 非法）
+          // 就换下一条；不打日志——部分路径在递归中执行，日志会放大成噪声。
+          }
           }
         }
       }
       return null;
     } catch {
+      // 有意静默：本条提取路径不适用于当前页面，返回 null 交由上层换下一条策略
       return null;
     }
   }

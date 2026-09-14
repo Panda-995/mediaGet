@@ -1,15 +1,17 @@
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
+import { TIMEOUT } from "@/lib/http";
 
 export const runtime = "nodejs";
 
-const TIMEOUT = 8000;
+// 原名为 TIMEOUT，与公共常量组同名易混，改为语义名
+const UPSTREAM_TIMEOUT_MS = TIMEOUT.DEFAULT;
 
 async function getRedirectUrl(url) {
   try {
     const response = await fetch(url, {
       redirect: "follow",
-      signal: AbortSignal.timeout(TIMEOUT),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
     return response.url;
   } catch (error) {
@@ -30,7 +32,7 @@ async function ppxiaParse(url) {
     const apiUrl = `https://h5.pipix.com/bds/cell/cell_h5_comment/?count=5&aid=1319&app_name=super&cell_id=${idMatch[1]}`;
     
     const response = await fetch(apiUrl, {
-      signal: AbortSignal.timeout(TIMEOUT),
+      signal: AbortSignal.timeout(UPSTREAM_TIMEOUT_MS),
     });
 
     if (!response.ok) {

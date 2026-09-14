@@ -13,7 +13,7 @@
  */
 
 /** 封面缩略参数尺寸（w × h），网易图床通过 ?param= 控制 */
-import { UA_CHROME_WIN126 } from "@/lib/http";
+import { TIMEOUT, UA_CHROME_WIN126 } from "@/lib/http";
 export const NETEASE_COVER_SIZE = 300;
 
 export const NETEASE_COVER_URL = "https://music.163.com/api/song/detail";
@@ -27,7 +27,7 @@ export const NETEASE_META_HEADERS = {
 };
 
 /** 详情请求超时（ms） */
-export const NETEASE_META_TIMEOUT = 8000;
+export const NETEASE_META_TIMEOUT = TIMEOUT.DEFAULT;
 
 /** 网易 songId：纯数字，常见 5~10 位 */
 const NETEASE_SONG_ID_RE = /^\d{4,12}$/;

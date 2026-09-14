@@ -1,5 +1,5 @@
 "use client";
-import React, { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Image from "next/image";
 import { Download, Music, Pause, Play } from "lucide-react";
 import { buildVideoProxyUrl } from "@/utils/videoProxy";

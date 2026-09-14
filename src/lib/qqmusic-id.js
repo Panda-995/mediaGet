@@ -8,7 +8,7 @@
  * 移出路由模块，由 platformRoutes 按平台映射动态加载并挂载同名函数。
  */
 
-import { UA_CHROME_WIN126 } from "@/lib/http";
+import { TIMEOUT, UA_CHROME_WIN126, fetchWithTimeout } from "@/lib/http";
 import { logger } from "@/lib/api-utils";
 import { zzcSign } from "@/lib/qqmusic-sign";
 import {
@@ -47,10 +47,10 @@ const cookieGuard = createQqmusicCookieGuard({
 });
 
 async function fetchJson(url, options = {}) {
-  const res = await fetch(url, {
+  const res = await fetchWithTimeout(url, {
     ...options,
     headers: { ...REQUEST_HEADERS, ...options.headers },
-    signal: AbortSignal.timeout(8000),
+    timeoutMs: TIMEOUT.DEFAULT,
   });
   if (!res.ok) return null;
   return await res.json();

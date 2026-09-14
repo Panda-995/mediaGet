@@ -1,5 +1,5 @@
 "use client";
-import React, { useState } from "react";
+import { useState } from "react";
 import Image from "next/image";
 import { ChevronDown, Download, ExternalLink } from "lucide-react";
 import { ApiResponse, ParseData } from "@/types/api";

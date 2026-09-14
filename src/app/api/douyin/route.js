@@ -1,4 +1,4 @@
-import { UA_IOS_SAFARI_16_6 } from "@/lib/http";
+import { TIMEOUT, UA_IOS_SAFARI_16_6 } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger, beijingNow } from "@/lib/api-utils";
 import { douyinPublicFallback } from "@/lib/douyinFallback";
@@ -15,6 +15,15 @@ import {
   isUserProfileUrl,
   extractUserFromRouter,
 } from "@/lib/douyin-extract";
+
+/**
+ * 抖音链路两档不在公共档位上的超时（**值保持原样，勿顺手归并**）：
+ * - 6s：备用源，主流程已失败，需要更快放弃；
+ * - 10s：分享页抓取（含重定向与反爬等待），比单次接口更慢。
+ * 见 docs/REFACTOR-PLAN.md P2-2。
+ */
+const FALLBACK_TIMEOUT_MS = 6_000;
+const SHARE_PAGE_TIMEOUT_MS = 10_000;
 
 // Docker 自托管下 Node runtime 对外网 fetch 通常比 Edge 沙箱更稳定（抖音等站）
 export const runtime = "nodejs";
@@ -200,7 +209,7 @@ async function douyin(url) {
           try {
             const response = await fetch(fetchUrl, {
               headers: buildFetchHeaders(ua),
-              signal: AbortSignal.timeout(8000),
+              signal: AbortSignal.timeout(TIMEOUT.DEFAULT),
             });
             const html = await response.text();
             lastHtml = html;
@@ -418,7 +427,7 @@ async function fetchUserStats(secUid, buildFetchHeaders) {
           try {
             const response = await fetch(fetchUrl, {
               headers: buildFetchHeaders(ua),
-              signal: AbortSignal.timeout(6000),
+              signal: AbortSignal.timeout(FALLBACK_TIMEOUT_MS),
             });
             const html = await response.text();
             const parsed = tryParseEmbedded(html);
@@ -461,7 +470,7 @@ async function fetchUserStats(secUid, buildFetchHeaders) {
         Accept: "application/json, text/plain, */*",
         Referer: "https://www.douyin.com/",
       },
-      signal: AbortSignal.timeout(8000),
+      signal: AbortSignal.timeout(TIMEOUT.DEFAULT),
     });
     const json = await response.json();
     const u = json?.user_info;
@@ -508,7 +517,7 @@ async function resolveHostViaDoh(hostname) {
       `https://dns.alidns.com/resolve?name=${encodeURIComponent(hostname)}&type=A`,
       {
         headers: { Accept: "application/dns-json" },
-        signal: AbortSignal.timeout(5000),
+        signal: AbortSignal.timeout(TIMEOUT.SHORT),
       }
     );
     const json = await res.json();
@@ -541,7 +550,7 @@ function httpsGetViaIp(hostname, ip, pathname, headers) {
         resolve({ status: res.statusCode, location: res.headers.location });
       }
     );
-    req.setTimeout(8000, () => req.destroy(new Error("timeout")));
+    req.setTimeout(TIMEOUT.DEFAULT, () => req.destroy(new Error("timeout")));
     req.on("error", reject);
     req.end();
   });
@@ -557,7 +566,7 @@ async function extractIdAndRedirectUrl(url) {
     const response = await fetch(url, {
       headers: MOBILE_HEADERS,
       redirect: "follow",
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(SHARE_PAGE_TIMEOUT_MS),
     });
     const finalUrl = response.url || url;
 

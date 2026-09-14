@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useCallback, useRef, useEffect } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Check, Copy, FileText, ChevronDown, ChevronUp } from "lucide-react";

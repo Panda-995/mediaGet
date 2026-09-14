@@ -68,6 +68,11 @@ function isSyndicationTombstone(json) {
   return json.__typename === "TweetTombstone" || Boolean(json.tombstone);
 }
 
+/** 未在上表中登记的 fixer 走这个兜底值（6s，不在公共档位上，沿用原值） */
+const FIXER_DEFAULT_TIMEOUT_MS = 6_000;
+/** 备用通道的兜底值（5s）：主服务已失败，这里要更快放弃 */
+const FIXER_BACKUP_TIMEOUT_MS = 5_000;
+
 /** 各 fixer 单请求超时（ms）：主站放宽，备用缩短——主服务失败时尽快切下一个 */
 const FIXER_TIMEOUT_MS = {
   "api.fxtwitter.com": 10000,
@@ -148,7 +153,10 @@ async function raceFixerResults(hosts, tweetId) {
         const json = await fetchFixerJson(
           host,
           tweetId,
-          Math.min(FIXER_TIMEOUT_MS[host] || 6000, 6000)
+          Math.min(
+            FIXER_TIMEOUT_MS[host] || FIXER_DEFAULT_TIMEOUT_MS,
+            FIXER_DEFAULT_TIMEOUT_MS
+          )
         );
         const t = json ? pickFxTweet(json) : null;
         const result = t ? buildFxResult(t) : null;
@@ -330,7 +338,10 @@ async function fetchAuthorProfile(tweetId) {
       const json = await fetchFixerJson(
         host,
         tweetId,
-        Math.min(FIXER_TIMEOUT_MS[host] || 5000, 6000)
+        Math.min(
+          FIXER_TIMEOUT_MS[host] || FIXER_BACKUP_TIMEOUT_MS,
+          FIXER_DEFAULT_TIMEOUT_MS
+        )
       );
       const t = pickFxTweet(json);
       if (!t) return null;
@@ -500,6 +511,14 @@ function pickVxtweet(json) {
  * vxtwitter 适配器：把 BetterTwitFix 的推文对象构造为同结构的 result。
  * vxtwitter 不返回作者简介/粉丝数/查看量，仅互动统计 + 媒体直链，
  * 作为 fxTwitter 家族全挂后的最终兜底。
+ *
+ * 返回类型显式标注为 ParseData：vxtwitter 分支**不写** sign / followerCount / views
+ * 三个键（fxTwitter 分支才写），若不标注，TS 只能按字面量推断出「没有这三个属性」，
+ * 消费方按统一契约读它们就会报 TS2339。标注后三者按 ParseData 视作可选缺失。
+ * （durationFormat 是本分支额外下发的字段，ParseData 未收录，故在此交叉补上。）
+ *
+ * @param {any} t
+ * @returns {{ code: number; msg: string; data: import("@/types/api").ParseData & { durationFormat?: string } } | null}
  */
 function buildVxtwitterResult(t) {
   if (!t || typeof t !== "object") return null;

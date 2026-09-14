@@ -20,7 +20,6 @@ import {
   refreshPlatformCaps,
   resetPlatformCapsForTest,
   setBuiltinPlayForTest,
-  setPlatformCapsForTest,
 } from "@/lib/music-caps";
 import {
   MUSIC_BEHAVIOR_DEFAULTS,

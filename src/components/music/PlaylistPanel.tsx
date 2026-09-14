@@ -37,8 +37,13 @@ export interface PlaylistPanelProps {
   handleListScroll: () => void;
   /** 聚合搜索模式（展示态/空态文案差异化） */
   aggMode?: boolean;
-  /** 空结果时的附加说明（聚合搜索失败源等），非空才展示 */
-  emptyHint?: string;
+  /**
+   * 上一次搜索 / 请求失败的原因：非空则渲染失败态，**优先于「未搜索」与「无结果」两个空态**。
+   * ⚠️ 为什么必须优先：搜索请求一开始就切到了本视图，失败时列表仍是 `null`，
+   * 让空态先渲染的话，失败原因会被「播放列表还是空的」彻底盖住——用户只当是没搜过，
+   * 既不知道失败了、也不知道为什么。错误文案挂在搜索面板上也没用：本视图已把面板换掉了。
+   */
+  errorHint?: string;
   /** 行内收藏按钮动作完成回调（父层弹轻提示）；不传则静默 */
   onFavoriteToggled?: (result: { added: boolean; persistFailed: boolean }) => void;
 }
@@ -66,7 +71,7 @@ export default function PlaylistPanel({
   playTrack,
   handleListScroll,
   aggMode = false,
-  emptyHint = "",
+  errorHint = "",
   onFavoriteToggled,
 }: PlaylistPanelProps) {
   if (searching) {
@@ -95,6 +100,22 @@ export default function PlaylistPanel({
       </div>
     );
   }
+  // 失败态优先于两个空态（理由见 errorHint 注释）：失败时 list 仍是 null，
+  // 「播放列表还是空的」会把失败原因整个盖掉
+  if (errorHint) {
+    return (
+      <div className="mp-scroll">
+        <div className="mp-state">
+          <AlertCircle />
+          <p>这次搜索没有完成</p>
+          <p style={{ fontSize: 12.5, color: "var(--error)" }}>{errorHint}</p>
+          <p style={{ fontSize: 12, opacity: 0.75 }}>
+            回到「发现歌曲」换个关键词再试，或切换音源 / 退出聚合搜索后重试
+          </p>
+        </div>
+      </div>
+    );
+  }
   if (!list) {
     return (
       <div className="mp-scroll">
@@ -119,11 +140,6 @@ export default function PlaylistPanel({
               ? "已搜索全部可用音源均无匹配：换个关键词，或切到单源搜索细查"
               : "换个关键词，或切换音源再试试"}
           </p>
-          {emptyHint && (
-            <p style={{ marginTop: 8, fontSize: 12.5, color: "var(--error)" }}>
-              {emptyHint}
-            </p>
-          )}
         </div>
       </div>
     );

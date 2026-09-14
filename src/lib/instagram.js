@@ -10,13 +10,13 @@
  *  3. 两者都拿不到媒体时，返回明确提示（需要配置 Cookie / 帖子私密）。
  */
 
-import { UA_CHROME_WIN126 } from "@/lib/http";
+import { TIMEOUT, UA_CHROME_WIN126 } from "@/lib/http";
 import { logger } from "@/lib/api-utils";
 
 const UA = UA_CHROME_WIN126;
 // 部署侧配置浏览器登录后的 sessionid Cookie（示例："sessionid=xxx; mid=yyy"）
 const IG_COOKIE = process.env.IG_COOKIE || "";
-const FETCH_TIMEOUT_MS = Number(process.env.IG_TIMEOUT_MS || 20000);
+const FETCH_TIMEOUT_MS = Number(process.env.IG_TIMEOUT_MS || TIMEOUT.PAGE);
 
 /** 从 Instagram 各类链接中提取短码，失败返回 null */
 export function extractShortcode(url) {

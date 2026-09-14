@@ -1,6 +1,7 @@
-import { UA_CHROME_WIN126 } from "@/lib/http";
+import { TIMEOUT, UA_CHROME_WIN126, fetchWithTimeout } from "@/lib/http";
 import { createApiHandler } from "@/lib/api-middleware";
 import { logger } from "@/lib/api-utils";
+import { parseFail } from "@/lib/parser-kit";
 import { parseBySongIds } from "@/lib/qqmusic-id";
 import { isQqMusicShortUrl, extractSongIds } from "@/lib/qqmusic";
 
@@ -17,10 +18,10 @@ const REQUEST_HEADERS = {
 async function resolveShareUrl(url) {
   if (!isQqMusicShortUrl(url)) return url;
   try {
-    const res = await fetch(url, {
+    const res = await fetchWithTimeout(url, {
       redirect: "follow",
       headers: REQUEST_HEADERS,
-      signal: AbortSignal.timeout(8000),
+      timeoutMs: TIMEOUT.DEFAULT,
     });
     if (extractSongIds(res.url)) return res.url;
     const html = await res.text();
@@ -40,15 +41,15 @@ async function parseQqMusic(shareUrl) {
     const resolved = await resolveShareUrl(shareUrl);
     const ids = extractSongIds(resolved || shareUrl);
     if (!ids) {
-      return {
-        code: 400,
-        msg: "无法识别QQ音乐歌曲链接，请粘贴歌曲页链接或App分享短链",
-      };
+      return parseFail(
+        400,
+        "无法识别QQ音乐歌曲链接，请粘贴歌曲页链接或App分享短链"
+      );
     }
     return await parseBySongIds(ids);
   } catch (error) {
     logger.error("qqmusic parse error:", error);
-    return { code: 500, msg: "服务器内部错误" };
+    return parseFail(500, "服务器内部错误");
   }
 }
 
