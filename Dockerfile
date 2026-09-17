@@ -4,20 +4,22 @@
 # 注意：本文件变更会触发 .github/workflows/deploy-to-docker.yaml，
 # 自动构建 GHCR 镜像并部署到服务器（解析站点当前运行方式）。
 
-FROM node:20-alpine AS deps
+FROM node:22-alpine AS deps
 
 # 国内 npm 镜像源加速
 RUN npm config set registry https://registry.npmmirror.com
 
 WORKDIR /app
 
+# 上游 package-lock.json 与 package.json 不同步（缺 @emnapi/* 等传递依赖），
+# npm ci 会直接失败；用 npm install 让 npm 自行补齐缺失条目
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm install --no-audit --no-fund
 
 # =============================================================================
 # 阶段 2：builder — 编译 Next.js 应用
 # =============================================================================
-FROM node:20-alpine AS builder
+FROM node:22-alpine AS builder
 
 RUN npm config set registry https://registry.npmmirror.com
 
@@ -38,7 +40,7 @@ RUN npm run build
 # =============================================================================
 # 阶段 3：runner — 最小运行时镜像
 # =============================================================================
-FROM node:20-alpine AS runner
+FROM node:22-alpine AS runner
 
 WORKDIR /app
 
