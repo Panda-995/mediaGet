@@ -111,13 +111,14 @@ jobs:
           echo "version=$VER" >> "$GITHUB_OUTPUT"
 
       - name: Create and push multi-arch manifest
+        working-directory: /tmp/digests
         run: |
           docker buildx imagetools create \
             -t "$IMAGE:latest" \
             -t "$IMAGE:main" \
             -t "$IMAGE:${{ steps.ver.outputs.version }}" \
             -t "$IMAGE:sha-${GITHUB_SHA::7}" \
-            $(printf -- "$IMAGE@sha256:%s " /tmp/digests/*)
+            $(printf -- "$IMAGE@sha256:%s " *)
 
       - name: Inspect image
         run: docker buildx imagetools inspect "$IMAGE:latest"
