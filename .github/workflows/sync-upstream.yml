@@ -1,4 +1,4 @@
-name: Sync upstream (merge from fixed upstream)
+name: Sync upstream (merge from hotier/mediaGet)
 
 on:
   schedule:
@@ -19,11 +19,15 @@ concurrency:
 jobs:
   sync:
     runs-on: ubuntu-latest
-    # 只在 fork 里运行；上游仓库自身无需自同步，避免每天空跑消耗 Actions 配额
-    if: github.repository != 'wu529778790/parse.shenzjd.com'
+    # 只在本 fork 里运行；上游仓库自身无需自同步，避免每天空跑消耗 Actions 配额
+    if: github.repository != 'hotier/mediaGet'
     env:
-      # 固定上游仓库与分支（按需改动）
-      UPSTREAM_REPO: wu529778790/parse.shenzjd.com
+      # 本 fork 的真正上游是父仓库 hotier/mediaGet。
+      # 不要指回 wu529778790/parse.shenzjd.com：那是从主线分叉出去的部署仓库，
+      # 自 2026-08-30 起与 hotier/mediaGet 各自演化、互不合并（38 vs 58 个提交），
+      # 每天 merge 只会产出混血树，npm test 必挂，验证门禁把 push 拦死，
+      # 于是天天报错发邮件（上游 hotier/mediaGet 自己的同名 workflow 也一直挂）。
+      UPSTREAM_REPO: hotier/mediaGet
       UPSTREAM_BRANCH: main
       DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
       # 可选：fork 里配置 SYNC_TOKEN（带 workflow 权限的 PAT：fine-grained 勾选
