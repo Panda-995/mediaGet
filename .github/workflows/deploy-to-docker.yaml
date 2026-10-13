@@ -22,9 +22,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          # Node 20 自 2025-09-19 起被 GitHub 强制跑在 Node 24 上；且 ubuntu-latest
-          # 将于 2026-10-19 迁移到 Ubuntu 26。锁 22 与 Cloudflare workflow 对齐。
-          node-version: 22
+          node-version: 20
           cache: "npm"
 
       - name: Install dependencies
