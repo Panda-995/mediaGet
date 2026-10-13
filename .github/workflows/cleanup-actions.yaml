@@ -1,8 +1,11 @@
 name: cleanup-actions-storage
 
 # 每天清一次 Actions cache 和旧 workflow run
-# 触发原因：wu529778790 账号的 0.5GB 免费配额老被 cache 撑爆
-# 删 cache + 删旧 run（连带 artifacts），保留最近 3 个 run 供回滚
+# 触发原因：GitHub 免费账号的 0.5GB cache 配额老被 cache 撑爆
+# 删 cache + 删旧 run（连带 artifacts），每个 workflow 保留最近 3 个 run 供回滚
+#
+# 注意：buildkit 构建缓存（type=gha）也以 Actions cache 形式存在，全删会让
+# deploy-to-docker 的跨天构建缓存失效。这里跳过 buildkit- 前缀的 key。
 
 on:
   schedule:
@@ -19,39 +22,42 @@ jobs:
   cleanup:
     runs-on: ubuntu-latest
     steps:
-      - name: Delete all Actions caches
+      - name: Delete Actions caches (keep buildkit cache)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "==> Deleting Actions caches..."
+          echo "==> Deleting Actions caches (skipping buildkit-*)..."
           deleted=0
           while :; do
-            ids=$(gh api "repos/${{ github.repository }}/actions/caches?per_page=100" \
-              --jq '.actions_caches[].id')
-            [ -z "$ids" ] && break
-            for id in $ids; do
-              gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$id" \
+            # 只取非 buildkit 的 cache key；buildkit-* 留给 docker/build-push-action 复用
+            keys=$(gh api "repos/${{ github.repository }}/actions/caches?per_page=100" \
+              --jq '.actions_caches[] | select(.key | startswith("buildkit-") | not) | .key')
+            [ -z "$keys" ] && break
+            # key 含 '/' 需 URL 转义后才能用于 DELETE 路径
+            while IFS= read -r key; do
+              [ -z "$key" ] && continue
+              enc=$(python3 -c 'import sys,urllib.parse;print(urllib.parse.quote(sys.stdin.read().strip(),safe=""))' <<<"$key")
+              gh api -X DELETE "repos/${{ github.repository }}/actions/caches/$enc" \
                 >/dev/null 2>&1 && deleted=$((deleted+1))
-            done
+            done <<<"$keys"
             # 安全熔断，防止无限循环
             [ $deleted -gt 500 ] && { echo "  safety break at 500"; break; }
           done
           echo "    deleted $deleted caches"
 
-      - name: Delete old workflow runs (keep latest 3)
+      - name: Delete old workflow runs (keep latest 3 per workflow)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          echo "==> Deleting old workflow runs (keeping latest 3)..."
-          runs=$(gh api "repos/${{ github.repository }}/actions/runs?per_page=100" \
-            --jq '.workflow_runs[].id')
-          # 前 3 个是最新（API 已按时间倒序），删剩下的
-          deleted=0
-          echo "$runs" | tail -n +4 | while read -r id; do
+          echo "==> Deleting old workflow runs (keeping latest 3 per workflow)..."
+          # 按 workflow_id 分组，各自保留最新 3 个；不再全局保留，避免
+          # 跑得勤的 cleanup 把 deploy 历史挤掉导致回滚时无记录可查。
+          gh api "repos/${{ github.repository }}/actions/runs?per_page=100" \
+            --jq '.workflow_runs | group_by(.workflow_id)[] | .[3:] | .[].id' \
+          | while read -r id; do
             [ -z "$id" ] && continue
-            if gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" \
-              >/dev/null 2>&1; then
-              deleted=$((deleted+1))
-            fi
+            gh api -X DELETE "repos/${{ github.repository }}/actions/runs/$id" \
+              >/dev/null 2>&1 || true
           done
           echo "    done"
+
