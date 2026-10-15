@@ -1,17 +1,8 @@
 name: cleanup-actions-storage
 
 # 每天清一次 Actions cache 和旧 workflow run
-<<<<<<< HEAD
 # 触发原因：wu529778790 账号的 0.5GB 免费配额老被 cache 撑爆
 # 删 cache + 删旧 run（连带 artifacts），保留最近 3 个 run 供回滚
-=======
-# 触发原因：GitHub 免费账号的 0.5GB cache 配额老被 cache 撑爆
-# 删 cache + 删旧 run（连带 artifacts），每个 workflow 保留最近 3 个 run 供回滚
-#
-# 注意：原 deploy-to-docker 的 buildx 缓存（key 前缀 buildkit-）也以 Actions cache
-# 形式存在，该工作流已移除（镜像改本地/服务器 `docker build`，见 CLAUDE.md「部署」）。
-# 这里仍跳过 buildkit- 前缀，只为避免误删历史遗留缓存；确认无残留后可一并简化。
->>>>>>> upstream/main
 
 on:
   schedule:
