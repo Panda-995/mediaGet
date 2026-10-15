@@ -77,5 +77,9 @@ npm run build:cf     # OpenNext Cloudflare 构建（产物 .open-next/）
 
 - **Vercel**：导入即用；注意公共 GD 上游对数据中心出口会触发 CF 人机校验，`/api/music` 需 `MUSIC_API_BASE(S)` 指向可直连实例；TikTok（yt-dlp child_process）在 Serverless 不可用。
 - **Cloudflare Workers**（OpenNext）：`npm run build:cf` → `.open-next/`；`wrangler.toml` 已配 `[vars]`/`[assets]`；敏感 Cookie 经 GitHub Actions `wrangler secret put` 注入（`.github/workflows/deploy-cloudflare.yaml`）。
-- **Docker（当前线上正式运行方式）**：多阶段 `Dockerfile`（standalone 产物）内置 yt-dlp + ffmpeg（TikTok 依赖）并以非 root 运行；`.github/workflows/deploy-to-docker.yaml` 手动触发发布。
+- **Docker（当前线上正式运行方式）**：多阶段 `Dockerfile`（standalone 产物）内置 yt-dlp + ffmpeg（TikTok 依赖）并以非 root 运行。发布已**不再走 GitHub Actions**（原 `.github/workflows/deploy-to-docker.yaml` 移除）：改本地/服务器 `docker build -t <image> .` 后手动跑容器，等价运行参数：
+  `docker run -d --name <repo> --restart unless-stopped --init --env-file /opt/1panel/apps/openresty/openresty/www/sites/parse.shenzjd.com/index/.env -p 5269:3000 <image>`
+  （`--init` 必需：node 作 PID1 不回收孤儿进程；PO Token 用的 bgutil 容器是独立自建工程，本仓不启停，地址经 `.env` 的 `POT_BASE_URL` 配置）。历史自动发布配方留在 git 历史里可查。
+- **CI**：`.github/workflows/ci.yaml`——push main / PR / 手动触发，跑 `npm test`（含 `tests/parse-core-shells.test.ts` 的 parse-core 薄壳 ↔ 真源一致性守卫）→ `tsc --noEmit` → `next build`。只检查，不部署、不出镜像。
+- **`package-lock.json` 只能用 npm 10 重生成**（CI 的 node 22 自带 npm 10）。本机 npm 11 写锁会裁掉跨平台 optional 叶子（`@esbuild/*`、`@cloudflare/workerd-*`）和 wasm peer（`@emnapi/core`、`@emnapi/wasi-threads`），ubuntu runner 上 `npm ci` 随即报 `Missing: ... from lock file`。改依赖后若在本机生成过锁，先 `npx npm@10 ci --dry-run`（干净临时目录里）验证再提交。
 - 开发依赖含 `@opennextjs/cloudflare`（`build:cf`）、`vitest`；未配置 prettier/format 脚本，代码风格靠 ESLint（`npm run lint`）约束。改动组件后跑 `npm run lint` 自查。

@@ -1,0 +1,12 @@
+{
+  "name": "@mediaget/parse-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "mediaGet 统一解析内核——web 与桌面端共用的单一代码源（docs/ARCHITECTURE.md §8）。当前以源码形态被两侧消费；发布工件（tsup dist + d.ts + GitHub Release tarball）在 CI 步骤接入。",
+  "license": "ISC",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types/api.ts"
+  }
+}

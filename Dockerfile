@@ -1,8 +1,9 @@
 # =============================================================================
 # 阶段 1：deps — 仅安装依赖（利用 Docker 层缓存）
 # =============================================================================
-# 注意：本文件变更会触发 .github/workflows/deploy-to-docker.yaml，
-# 自动构建 GHCR 镜像并部署到服务器（解析站点当前运行方式）。
+# 出镜像方式（原 .github/workflows/deploy-to-docker.yaml 已移除）：本地或服务器上
+#   docker build -t <image> .  →  docker run（运行参数见 CLAUDE.md「部署」）
+# CI（.github/workflows/ci.yaml）只跑 test + tsc + next build，不构建镜像。
 
 FROM node:22-alpine AS deps
 

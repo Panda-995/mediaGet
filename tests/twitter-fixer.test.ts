@@ -17,7 +17,7 @@ import {
   pickFxTweet,
   pickVxtweet,
   raceFixerResults,
-} from "@/app/api/twitter/route";
+} from "@/lib/twitterCore";
 
 // 真实 fxTwitter 响应（2026-08-31 浏览器实测，纯文本推文，含引用）
 const realFxTwitterJson = {

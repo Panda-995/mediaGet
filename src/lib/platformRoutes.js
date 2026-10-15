@@ -63,6 +63,17 @@ export async function getPlatformParser(platform) {
       };
       if (typeof mod.parseVideoId === "function") {
         routeParser.parseVideoId = mod.parseVideoId;
+      } else if (platform === "twitter") {
+        // twitter 的 ID 解析（parseVideoId）已随路由抽取迁入 lib 核心，
+        // Next 路由模块只保留 GET/runtime，故从 @/lib/twitterCore 挂载。
+        try {
+          const idMod = await import("@/lib/twitterCore.js");
+          if (typeof idMod.parseVideoId === "function") {
+            routeParser.parseVideoId = idMod.parseVideoId;
+          }
+        } catch {
+          // 挂载失败按不支持 ID 解析处理（统一解析器会给出明确提示）
+        }
       } else if (platform === "qqmusic") {
         // qqmusic 的 source+id 解析已从路由模块移出（Next 路由模块不允许
         // 额外具名导出，否则 next build 类型校验失败），改从 lib 模块挂载。
