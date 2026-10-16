@@ -6,10 +6,11 @@
  */
 
 import { spawn } from "child_process";
+import { getConfigOrEnv } from "../config";
 
 // 支持 YTDLP_BIN 含参数（如 "python3 -m yt_dlp"），默认走 PATH 里的 yt-dlp
-const YTDLP_CMD = (process.env.YTDLP_BIN || "yt-dlp").trim().split(/\s+/);
-const YTDLP_TIMEOUT_MS = Number(process.env.YTDLP_TIMEOUT_MS || 25000);
+const YTDLP_CMD = String(getConfigOrEnv("ytdlpBin", "YTDLP_BIN", "yt-dlp")).trim().split(/\s+/);
+const YTDLP_TIMEOUT_MS = Number(getConfigOrEnv("ytdlpTimeoutMs", "YTDLP_TIMEOUT_MS", 25000));
 
 /** 运行 yt-dlp 并返回 stdout；错误时抛 Error（含分类前缀） */
 export function runYtDlp(args, timeoutMs = YTDLP_TIMEOUT_MS) {

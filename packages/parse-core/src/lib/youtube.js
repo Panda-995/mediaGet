@@ -32,18 +32,19 @@
 
 import { UA_CHROME_WIN126 } from "./http";
 import { logger } from "./api-utils";
+import { getConfigOrEnv } from "../config";
 
 const UA = UA_CHROME_WIN126;
 
-const REQUEST_TIMEOUT_MS = Number(process.env.YOUTUBE_SOURCE_TIMEOUT_MS || 6000);
+const REQUEST_TIMEOUT_MS = Number(getConfigOrEnv("youtubeSourceTimeoutMs", "YOUTUBE_SOURCE_TIMEOUT_MS", 6000));
 
 // 官方 YouTube Data API v3（可选元数据源）：配置 YOUTUBE_API_KEY 后启用，解析成功时
 // 元数据以官方为准（v3 更权威稳定，公共实例常缺字段/波动）；videos+channels 两次请求
 // 共享一个整体超时预算（YOUTUBE_API_TIMEOUT_MS），超时自动放弃并静默回退原链路。
 // key 只放服务端环境变量，绝不进前端。注意：v3 只给元数据、不给媒体直链，下载直链
 // 仍由 Piped/Invidious 竞速负责（见 fetchOfficialMeta）。
-const YOUTUBE_API_KEY = String(process.env.YOUTUBE_API_KEY || "").trim();
-const YOUTUBE_API_TIMEOUT_MS = Number(process.env.YOUTUBE_API_TIMEOUT_MS || 5000);
+const YOUTUBE_API_KEY = String(getConfigOrEnv("youtubeApiKey", "YOUTUBE_API_KEY", "")).trim();
+const YOUTUBE_API_TIMEOUT_MS = Number(getConfigOrEnv("youtubeApiTimeoutMs", "YOUTUBE_API_TIMEOUT_MS", 5000));
 
 // 默认候选（2026-09 实测刷新）：
 // - Invidious：官方 docs.invidious.io/instances 登记的 Clearnet 实例仅 5 个
@@ -67,8 +68,10 @@ const splitEnv = (raw) =>
     .map((s) => s.trim())
     .filter(Boolean);
 
-const INVIDIOUS_HOSTS = splitEnv(process.env.YOUTUBE_INVIDIOUS_HOSTS);
-const PIPED_HOSTS = splitEnv(process.env.YOUTUBE_PIPED_HOSTS);
+const INVIDIOUS_HOSTS_RAW = String(getConfigOrEnv("youtubeInvidiousHosts", "YOUTUBE_INVIDIOUS_HOSTS", ""));
+const PIPED_HOSTS_RAW = String(getConfigOrEnv("youtubePipedHosts", "YOUTUBE_PIPED_HOSTS", ""));
+const INVIDIOUS_HOSTS = splitEnv(INVIDIOUS_HOSTS_RAW);
+const PIPED_HOSTS = splitEnv(PIPED_HOSTS_RAW);
 
 /** 把配置项归一化为可拼接的 https 根地址 */
 export function normalizeBase(input) {

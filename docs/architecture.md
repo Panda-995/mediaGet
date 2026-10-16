@@ -89,3 +89,19 @@ CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（
 | `bowser`、`lucide-react`、`@radix-ui/*` | 使用中 | — |
 
 已清理：`audiomotion-analyzer`（功能被 `pseudo-spectrum.tsx` 原生 Canvas 实现取代，0 引用）、`playwright-core`（仅服务一次性调试脚本，脚本已删）。
+
+## 8. parse-core 版本化与 semver 规则
+
+`packages/parse-core` 是 web 与桌面端共用的解析内核单一代码源，发布为 `@mediaget/parse-core` 版本化工件，**双通道同源**：npm 注册表为主渠道，GitHub Release 附带同一份 tarball（含 `.sha256`）供离线/审计/非 npm 用户。release workflow 先 `npm pack` 出 tarball，再用 `npm publish <tarball>` 上传**同一个文件本体**，并在校验步比对 registry 副本的 sha256 与本地 tarball 一致，不一致直接红叉。版本号遵循语义化版本（semver）：
+
+| 变更类型 | 版本递增 | 示例 |
+| --- | --- | --- |
+| **major**（破坏性变更） | X.0.0 | 修改 `exports` 白名单、改变返回结构 `{ code, msg, data }`、移除已导出平台解析器 |
+| **minor**（新增功能） | 0.X.0 | 新增平台解析器并加入 exports、新增 `setKernelConfig` 配置注入 API |
+| **patch**（向后兼容修复） | 0.0.X | 修复某平台解析 bug、优化超时/重试策略、内部重构不改变公开接口 |
+
+**铁律**：
+- `src/index.ts` 的 exports 白名单是唯一对外契约；web 侧薄壳 re-export 和桌面端 import 都只认这份清单。
+- 每次改 `src/**` 后若未升 version，CI 的 release workflow 会拒绝打 tag（tag version ≠ package.json version）。
+- 桌面端 About 页通过 `PARSE_CORE_VERSION` 展示当前内核版本，便于追踪上游更新。
+

@@ -4,6 +4,7 @@
 import { DEFAULT_MOBILE_UA } from "./default-mobile-ua";
 import { getRedirectLocation } from "./redirect-location";
 import { TIMEOUT, fetchWithTimeout } from "./http";
+import { getConfigOrEnv } from "../config";
 
 /** 视频时长（秒）→ "mm:ss" / "h:mm:ss"，无效返回空串 */
 function formatSeconds(sec) {
@@ -44,8 +45,8 @@ const DEFAULT_FIXER_HOSTS = [
   "api.vxtwitter.com",
 ];
 const FIXER_HOSTS = (() => {
-  const cfg = process.env.TWITTER_FIXER_SERVICES;
-  if (typeof cfg === "string" && cfg.trim()) {
+  const cfg = String(getConfigOrEnv("twitterFixerServices", "TWITTER_FIXER_SERVICES", ""));
+  if (cfg.trim()) {
     const hosts = cfg
       .split(",")
       .map((s) => s.trim())

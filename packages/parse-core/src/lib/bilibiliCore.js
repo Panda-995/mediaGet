@@ -10,15 +10,16 @@ import {
   createBiliCookieGuard,
   createBiliHealthProbe,
 } from "./bilibili-cookie-guard";
+import { getConfigOrEnv } from "../config";
 
-// 从环境变量获取配置
-const BILIBILI_USER_AGENT = process.env.BILIBILI_USER_AGENT || 
-  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36";
+// 从注入配置或环境变量获取配置
+const BILIBILI_USER_AGENT = String(getConfigOrEnv("bilibiliUserAgent", "BILIBILI_USER_AGENT",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_14_6) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/94.0.4606.81 Safari/537.36"));
 
 // 现代浏览器 UA：部分公开接口（空间信息等）用旧 UA 会被风控拦截（-799 / -401）
 const MODERN_USER_AGENT = UA_CHROME_WIN126;
 
-const BILIBILI_COOKIE = process.env.BILIBILI_COOKIE || "";
+const BILIBILI_COOKIE = String(getConfigOrEnv("bilibiliCookie", "BILIBILI_COOKIE", ""));
 
 // —— 简易 Cookie 池 ——
 // B站按请求出口 IP + Cookie 决定是否放行：无 Cookie 的数据中心/海外出口 IP

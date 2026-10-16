@@ -9,6 +9,7 @@
  * 就在这里加一行导出并升 minor；消费者（mediaGet-desktop LOCAL_PARSERS）随之接入。
  */
 export { PLATFORM_INFO, identifyPlatform, getPlatformName } from "./lib/platforms";
+export type { PlatformInfoEntry } from "./lib/platforms";
 export { extractUrlFromShareText } from "./lib/share-text";
 export { isBlockedText, BLOCKED_HOSTS } from "./lib/blockedPlatforms";
 export { normalizeResult } from "./lib/normalize-result";
@@ -55,3 +56,9 @@ export type {
   ParsedVideoQuality,
 } from "./types/api";
 export type { VideoPlatformKey } from "./config/video-platforms";
+
+// —— 运行时配置注入（桌面端专用）——
+export { setKernelConfig, getKernelConfig, type KernelConfig } from "./config";
+
+// —— 版本信息（供消费者展示内核版本；与 package.json version 同步）——
+export const PARSE_CORE_VERSION = "0.1.2";

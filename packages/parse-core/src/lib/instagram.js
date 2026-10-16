@@ -12,11 +12,12 @@
 
 import { TIMEOUT, UA_CHROME_WIN126 } from "./http";
 import { logger } from "./api-utils";
+import { getConfigOrEnv } from "../config";
 
 const UA = UA_CHROME_WIN126;
 // 部署侧配置浏览器登录后的 sessionid Cookie（示例："sessionid=xxx; mid=yyy"）
-const IG_COOKIE = process.env.IG_COOKIE || "";
-const FETCH_TIMEOUT_MS = Number(process.env.IG_TIMEOUT_MS || TIMEOUT.PAGE);
+const IG_COOKIE = String(getConfigOrEnv("igCookie", "IG_COOKIE", ""));
+const FETCH_TIMEOUT_MS = Number(getConfigOrEnv("igTimeoutMs", "IG_TIMEOUT_MS", TIMEOUT.PAGE));
 
 /** 从 Instagram 各类链接中提取短码，失败返回 null */
 export function extractShortcode(url) {

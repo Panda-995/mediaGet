@@ -4,6 +4,7 @@ import { logger, beijingNow } from "./api-utils";
 import { douyinPublicFallback } from "./douyinFallback";
 import { sleep } from "./anti-bot";
 import { request as httpsRequest } from "node:https";
+import { getConfigOrEnv } from "../config";
 import {
   hasValidData,
   tryParseEmbedded,
@@ -103,7 +104,7 @@ function noteDouyinOutcome({ cookieConfigured, succeeded, challenged }) {
 
 export async function douyinParse(url) {
   try {
-    const DOUYIN_COOKIE = process.env.DOUYIN_COOKIE || "";
+    const DOUYIN_COOKIE = String(getConfigOrEnv("douyinCookie", "DOUYIN_COOKIE", ""));
 
     // ---- Step 1: 从短链 / 分享链接中提取视频 ID 和完整重定向 URL ----
     const extractResult = await extractIdAndRedirectUrl(url);
@@ -410,7 +411,8 @@ async function fetchUserStats(secUid, buildFetchHeaders) {
   if (!secUid || typeof secUid !== "string" || secUid.length < 8) return null;
 
   // 1) SSR 用户主页（仅配置了 cookie 时尝试，避免无谓等待被风控的超时）
-  if (process.env.DOUYIN_COOKIE) {
+  const douyinCookie = String(getConfigOrEnv("douyinCookie", "DOUYIN_COOKIE", ""));
+  if (douyinCookie) {
     const urls = [
       `https://www.douyin.com/user/${secUid}`,
       `https://www.iesdouyin.com/share/user/${secUid}`,

@@ -11,6 +11,7 @@
 import { TIMEOUT, UA_CHROME_WIN126, fetchWithTimeout } from "./http";
 import { logger } from "./api-utils";
 import { zzcSign } from "./qqmusic-sign";
+import { getConfigOrEnv } from "../config";
 import {
   SONGMID_RE,
   QQMUSIC_FAILURE,
@@ -28,7 +29,7 @@ import {
 // QQMUSIC_COOKIE：QQ 登录态 Cookie（uin + qm_keyst 等）。vkey 试听接口对
 // 无登录态请求返回风控码（实测 500003），带 Cookie 是当前拿试听直链的通用手段。
 // 与 BILIBILI_COOKIE 同约定：不走 wrangler.toml，在 Worker Dashboard 配置。
-const QQMUSIC_COOKIE = process.env.QQMUSIC_COOKIE || "";
+const QQMUSIC_COOKIE = String(getConfigOrEnv("qqmusicCookie", "QQMUSIC_COOKIE", ""));
 
 const REQUEST_HEADERS = {
   "User-Agent":

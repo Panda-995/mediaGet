@@ -3,12 +3,13 @@
  */
 import { TIMEOUT, UA_EDGE_WIN129 } from "./http";
 import { logger } from "./api-utils";
+import { getConfigOrEnv } from "../config";
 
 /** 小红书 H5：桌面 Chrome UA，短链统一走 https */
 const XHS_USER_AGENT = UA_EDGE_WIN129;
 
 // 可选：浏览器登录小红书后复制的 Cookie，可显著降低数据中心/海外出口被风控概率
-const XHS_COOKIE = process.env.XHS_COOKIE || "";
+const XHS_COOKIE = String(getConfigOrEnv("xhsCookie", "XHS_COOKIE", ""));
 
 // —— 简易 Cookie 池 ——
 // 小红书对无 Cookie 的请求（尤其数据中心/海外 IP）会间歇返回安全验证页

@@ -1,0 +1,135 @@
+name: Release parse-core
+
+on:
+  push:
+    tags:
+      - "parse-core-v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-parse-core-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  release:
+    name: Build and publish parse-core tarball
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: "npm"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify version matches tag
+        run: |
+          PKG_VERSION=$(node -p "require('./packages/parse-core/package.json').version")
+          case "$GITHUB_REF" in
+            refs/tags/parse-core-v*) TAG_VERSION="${GITHUB_REF#refs/tags/parse-core-v}" ;;
+            *) TAG_VERSION="$PKG_VERSION" ;;  # workflow_dispatch：无 tag ref，以 package.json 为准
+          esac
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version ($TAG_VERSION) does not match package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+          # PARSE_CORE_VERSION 是桌面 About 页显示的版本号，与 package.json 各写一份，漂移了就发错版本
+          EMBODED=$(grep -o 'export const PARSE_CORE_VERSION = "[^"]*"' packages/parse-core/src/index.ts | cut -d'"' -f2)
+          echo "package.json=$PKG_VERSION  src/index.ts=$EMBODED"
+          if [ "$EMBODED" != "$PKG_VERSION" ]; then
+            echo "::error::PARSE_CORE_VERSION in src/index.ts ($EMBODED) != package.json version ($PKG_VERSION)"
+            exit 1
+          fi
+
+      - name: Build parse-core
+        working-directory: packages/parse-core
+        run: |
+          npm install
+          npm run build
+
+      - name: Run tests
+        run: npm test
+
+      - name: Pack tarball
+        working-directory: packages/parse-core
+        run: npm pack --ignore-scripts
+
+      - name: Compute SHA-256
+        working-directory: packages/parse-core
+        run: |
+          TARBALL=$(ls mediaget-parse-core-*.tgz | head -1)
+          sha256sum "$TARBALL" > "${TARBALL}.sha256"
+          echo "TARBALL=$TARBALL" >> $GITHUB_ENV
+          echo "PKG_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
+
+      # 发布的就是上面 pack 出来的那个文件本体，两个渠道拿到的是同一份字节。
+      - name: Publish to npm
+        working-directory: packages/parse-core
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          npm publish "./${TARBALL}" --access public --ignore-scripts \
+            --registry=https://registry.npmjs.org
+
+      - name: Keep the packed tarball for audit
+        uses: actions/upload-artifact@v4
+        with:
+          name: parse-core-${{ env.PKG_VERSION }}
+          path: packages/parse-core/${{ env.TARBALL }}
+          if-no-files-found: error
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: "parse-core v${{ env.PKG_VERSION }}"
+          body: |
+            Auto-generated release for @mediaget/parse-core v${{ env.PKG_VERSION }}.
+
+            **npm（主渠道）:**
+            ```sh
+            npm install @mediaget/parse-core
+            ```
+
+            **离线 / 审计 / 非 npm 用户:** 下载本 Release 附带的 .tgz（与 npm 上的副本字节一致，见 .sha256）。
+          files: |
+            packages/parse-core/${{ env.TARBALL }}
+            packages/parse-core/${{ env.TARBALL }}.sha256
+          draft: false
+          prerelease: false
+
+      # 两渠道共用同一次 pack 的文件，字节一致是构造保证；这步只是事后确认。
+      # npm 新包要过安全扫描才可查（首发实测数分钟），所以「暂时查不到」只报 warning，
+      # 「查到了但 hash 不同」才是真漂移，必须红叉。
+      - name: Verify registry copy matches packed tarball
+        run: |
+          URL=""
+          for i in $(seq 1 20); do
+            URL=$(npm view "@mediaget/parse-core@${PKG_VERSION}" dist.tarball \
+              --prefer-online --registry=https://registry.npmjs.org 2>/dev/null || true)
+            [ -n "$URL" ] && break
+            echo "registry 尚未可查（第 $i 次，扫描期），等待 30s…"
+            sleep 30
+          done
+          if [ -z "$URL" ]; then
+            echo "::warning::${PKG_VERSION} 在 10 分钟内仍未在 registry 可查（npm 扫描期）。Release 附件就是本次 publish 的那个文件本体，两渠道一致性未受影响。"
+            exit 0
+          fi
+          curl -fsSL -o /tmp/registry-copy.tgz "$URL"
+          LOCAL=$(sha256sum "packages/parse-core/${TARBALL}" | cut -d' ' -f1)
+          REMOTE=$(sha256sum /tmp/registry-copy.tgz | cut -d' ' -f1)
+          echo "npm:    $REMOTE"
+          echo "packed: $LOCAL"
+          if [ "$LOCAL" != "$REMOTE" ]; then
+            echo "::error::registry 副本与本次 pack 的 tarball 字节不同——两渠道漂移"
+            exit 1
+          fi
+          echo "对拍通过：npm 与 Release 两条渠道是同一字节串。"
