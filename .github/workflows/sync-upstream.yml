@@ -125,4 +125,18 @@ jobs:
           git push origin "${{ steps.b.outputs.local_default }}"
 
       - name: Sync tags
-        run: git push --tags origin
+        run: |
+          # GITHUB_TOKEN 拿不到 workflows 权限（平台硬边界）：凡指向"会改动
+          # .github/workflows/ 的提交"的上游标签（parse-core-* 系列，提交里带
+          # ci.yaml）都会被 GitHub 整条拒收（refusing to allow a GitHub App to
+          # create or update workflow ...），git push --tags 一把梭会让整个每日
+          # 同步判死。改为逐个推送：能推的推，推不动的降级为 warning 跳过——
+          # fork 的构建全部由 push main / workflow_dispatch 触发，不依赖标签。
+          for tag in $(git tag --list); do
+            if out=$(git push origin "refs/tags/${tag}:refs/tags/${tag}" 2>&1); then
+              echo "tag ${tag}: 已同步或已是最新"
+            else
+              echo "::warning::tag ${tag} 未同步（无 workflows 权限，指向含 workflow 变更的提交会被 GitHub 拒收）"
+              echo "$out"
+            fi
+          done
