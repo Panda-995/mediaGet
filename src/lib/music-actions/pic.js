@@ -1,4 +1,5 @@
-import { getCachedResponse, logger, sanitizeUrl, setCacheResponse } from "@/lib/api-utils";
+import { logger, sanitizeUrl } from "@/lib/api-utils";
+import { getCachedResponse, setCacheResponse } from "@/lib/server-guard";
 import {
   GD_SOURCE_LIST,
   MUSIC_FAILURE,

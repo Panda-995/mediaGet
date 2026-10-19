@@ -11,6 +11,7 @@
 
 import { logger } from "./api-utils";
 import { runYtDlp, sleep } from "./ytDlpClient";
+import { buildQualityList } from "./quality";
 
 /**
  * 单次解析尝试，返回统一结果结构 { code, msg, data }
@@ -52,6 +53,24 @@ async function tryParseOnce(url) {
     return { code: 201, msg: "解析失败：未获取到可播放的视频地址（视频可能已删除或私密）" };
   }
 
+  // 合流档位表：同高度只留第一条（yt-dlp 常按 codec 重复下发），按高度降序
+  const byHeight = new Map();
+  for (const format of progressive) {
+    const height = Number(format.height) || 0;
+    const key = height || format.format_id || format.url;
+    if (!byHeight.has(key)) byHeight.set(key, format);
+  }
+  const qualities = buildQualityList(
+    [...byHeight.values()].map((format) => {
+      const height = Number(format.height) || 0;
+      return {
+        quality: height,
+        label: height ? `${height}p` : format.format_note || "默认",
+        url: format.url,
+      };
+    })
+  );
+
   logger.log(`[tiktok] 解析成功：《${(info.title || "").slice(0, 30)}》(${best.height || "?"}p mp4)`);
   return {
     code: 200,
@@ -61,6 +80,7 @@ async function tryParseOnce(url) {
       author: info.uploader || info.creator || info.channel || "",
       cover: info.thumbnail || "",
       url: best.url,
+      ...(qualities ? { qualities } : {}),
       type: "video",
       duration: (info.duration || 0) * 1000, // 前端按毫秒处理
     },

@@ -25,22 +25,3 @@ export const parseOk = (data) => ({ code: 200, msg: "解析成功", data });
  * @param {string} msg
  */
 export const parseFail = (code, msg) => ({ code, msg });
-
-/**
- * 从分享链接里取查询参数（全民K歌的 s、好看视频的 vid 等）。
- *
- * 两种失败要分开报，所以返回结构而不是只返回值：
- * - `invalidUrl`：`new URL()` 直接抛（链接不是合法 URL）→ 报「链接无效」；
- * - 空字符串：URL 合法但没带该参数 → 报「无法解析 xx」。
- *
- * @param {string} shareUrl
- * @param {string} key
- * @returns {{ value: string, invalidUrl: boolean }}
- */
-export function extractQueryParam(shareUrl, key) {
-  try {
-    return { value: new URL(shareUrl).searchParams.get(key) || "", invalidUrl: false };
-  } catch {
-    return { value: "", invalidUrl: true };
-  }
-}

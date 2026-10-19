@@ -140,6 +140,7 @@ export default function XhsVideo({ data }: XhsVideoProps) {
           accent="pink"
           tall
           inline
+          qualities={xhsData.qualities}
         />
       )}
 

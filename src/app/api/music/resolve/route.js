@@ -1,14 +1,13 @@
 import { TIMEOUT, UA_CHROME_WIN126 } from "@/lib/http";
+import { beijingNow, logger } from "@/lib/api-utils";
 import {
-  beijingNow,
   getCachedResponse,
   getClientIP,
   getCorsHeaders,
   isBlockedIP,
-  logger,
   rateLimit,
   setCacheResponse,
-} from "@/lib/api-utils";
+} from "@/lib/server-guard";
 import { honeypotResponse } from "@/lib/honeypot";
 import {
   MUSIC_CACHE_TTL,
@@ -80,7 +79,7 @@ const LINK_MAX_LEN = 2000;
 const REDIRECT_TIMEOUT = 7000;
 const META_TIMEOUT = TIMEOUT.DEFAULT;
 
-/** QQ 官方歌曲信息接口请求头（与 qqmusic-id.js 同源） */
+/** QQ 官方歌曲信息接口请求头 */
 const QQ_META_HEADERS = {
   "User-Agent":
     UA_CHROME_WIN126,

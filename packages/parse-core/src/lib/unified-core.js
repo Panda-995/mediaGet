@@ -10,6 +10,7 @@
  */
 
 import { logger } from "./api-utils";
+import { getRuntime } from "../runtime";
 import {
   identifyPlatform,
   getPlatformName,
@@ -56,6 +57,17 @@ export function createUnifiedParser(getParser) {
         }
 
         logger.log(`识别到平台: ${platform} (${getPlatformName(platform)})`);
+
+        // 内核结果缓存：仅在下游 setRuntime({ cache }) 时启用，默认 null 不缓存
+        // （web 的响应缓存在自己的中间件里，两层各自独立，不会重复命中）
+        const cache = getRuntime().cache;
+        if (cache) {
+          const hit = cache.get(input);
+          if (hit) {
+            logger.log(`内核缓存命中: ${input.slice(0, 60)}`);
+            return hit;
+          }
+        }
 
         const parser = await getParser(platform);
         if (!parser) {
@@ -117,6 +129,13 @@ export function createUnifiedParser(getParser) {
 
         if (result && result.platform === undefined) {
           result.platform = platform;
+        }
+        // 只缓存成功结果；embedOnly 降级（解析源暂不可用、仅官方嵌入）不缓存，
+        // 与 web 中间件的写入口径一致：解析源恢复后重试应立即拿到直链
+        const degrade =
+          result?.data?.embedOnly === true && !result?.data?.url;
+        if (cache && result?.code === 200 && !degrade) {
+          cache.set(input, result);
         }
         return result;
       }

@@ -145,6 +145,7 @@ export default function DouyinVideo({ data }: DouyinVideoProps) {
           downloadText="下载视频"
           audioUrl={douyinData.audioUrl}
           downloadName={downloadName}
+          qualities={douyinData.qualities}
         />
       )}
 

@@ -1,11 +1,10 @@
+import { beijingNow, logger } from "@/lib/api-utils";
 import {
-  beijingNow,
   getClientIP,
   getCorsHeaders,
   isBlockedIP,
-  logger,
   rateLimit,
-} from "@/lib/api-utils";
+} from "@/lib/server-guard";
 import { honeypotResponse } from "@/lib/honeypot";
 import { normalizeResult } from "@/lib/normalize-result";
 import {

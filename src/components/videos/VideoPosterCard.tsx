@@ -6,6 +6,7 @@ import { buildVideoProxyUrl } from "@/utils/videoProxy";
 import { Button } from "@/components/ui/button";
 import type { VideoPlatformKey } from "@/config/video-platforms";
 import { useVideoMediaSession } from "./use-video-media-session";
+import { QualitySelect } from "./DownloadRow";
 
 /**
  * 统一视频展示卡片（简化版）：上方封面图 + 下方「播放视频 / 下载视频」两个链接。
@@ -33,10 +34,10 @@ export interface PosterPart {
   cover?: string;
 }
 
-type AccentKey = "blue" | "red" | "orange" | "pink" | "neutral" | "purple" | "dy";
+type AccentKey = "blue" | "red" | "orange" | "pink" | "neutral" | "dy";
 
 const ACCENTS: Record<AccentKey, string> = {
-  // B站 / 皮皮虾 / 皮皮搞笑
+  // B站
   blue: "from-[#00aeec] to-[#4dc9ff]",
   // 微博
   red: "from-[#e6162d] to-[#ff4d6a]",
@@ -46,8 +47,6 @@ const ACCENTS: Record<AccentKey, string> = {
   pink: "from-[#ff2442] to-[#ff5c7c]",
   // 通用平台
   neutral: "from-neutral-500 to-neutral-400",
-  // QQ音乐
-  purple: "from-purple-500 to-violet-500",
   // 抖音
   dy: "from-[#fe2c55] to-[#ff6b8a]",
 };
@@ -84,6 +83,8 @@ interface VideoPosterCardProps {
   inline?: boolean;
   /** 多分P列表（可选）：>1 时播放卡片内显示分P切换条，播放/封面/下载跟随当前分P */
   parts?: PosterPart[];
+  /** 多清晰度直链（可选）：>1 时在操作区上方显示档位下拉，播放/下载跟随所选档 */
+  qualities?: { url: string; label: string }[];
   /** 整体视频标题：系统媒体控件与站点标题用（缺失时不上报播放会话） */
   title?: string;
   /** 上传者（UP主 / 博主）：系统媒体控件第二行 */
@@ -108,6 +109,7 @@ export default function VideoPosterCard({
   showPlay = true,
   inline = false,
   parts,
+  qualities,
   title,
   author,
   platform,
@@ -116,8 +118,22 @@ export default function VideoPosterCard({
   // 多分P：parts 存在且 >1 时启用分P切换，当前分P决定播放/封面/下载源
   const partsList = Array.isArray(parts) && parts.length > 1 ? parts : null;
   const [partIndex, setPartIndex] = useState(0);
+  // 单视频多档位：初始选中与主直链同 URL 的档位（没有则第一档），
+  // 避免解析器给出的主直链与下拉首档指向不同 CDN 时悄悄换源。
+  const qualityList =
+    !partsList && Array.isArray(qualities) && qualities.length > 1
+      ? qualities
+      : null;
+  const [qualityIndex, setQualityIndex] = useState(() => {
+    if (!Array.isArray(qualities)) return 0;
+    const match = qualities.findIndex((q) => q.url === url);
+    return match >= 0 ? match : 0;
+  });
   const activePart = partsList ? partsList[partIndex] : null;
-  const currentUrl = activePart?.url || url;
+  const activeQuality = qualityList
+    ? qualityList[Math.min(qualityIndex, qualityList.length - 1)]
+    : null;
+  const currentUrl = activeQuality?.url || activePart?.url || url;
   const currentCover = activePart?.cover || cover;
   // 防盗链直链走代理，保证可播放、可下载
   const playUrl = buildVideoProxyUrl(currentUrl);
@@ -281,6 +297,18 @@ export default function VideoPosterCard({
               )}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* 单视频多档位：右上角下拉切换清晰度，播放与下载同步跟随 */}
+      {qualityList && (
+        <div className="flex justify-end">
+          <QualitySelect
+            options={qualityList}
+            value={qualityIndex}
+            onChange={setQualityIndex}
+            ariaLabel="清晰度"
+          />
         </div>
       )}
 

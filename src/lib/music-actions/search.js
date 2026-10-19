@@ -1,4 +1,5 @@
-import { getCachedResponse, logger, setCacheResponse } from "@/lib/api-utils";
+import { logger } from "@/lib/api-utils";
+import { getCachedResponse, setCacheResponse } from "@/lib/server-guard";
 import {
   GD_SEARCH_PAGE_MAX,
   GD_SEARCH_SOURCE_LIST,

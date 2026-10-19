@@ -8,7 +8,8 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as imageGET } from "@/app/api/image/route.js";
 import { GET as videoGET } from "@/app/api/video-proxy/route.js";
-import { createTtlCache, pruneAllRateLimit, rateLimit } from "@/lib/api-utils";
+import { createTtlCache } from "@/lib/api-utils";
+import { pruneAllRateLimit, rateLimit } from "@/lib/server-guard";
 
 const goodJpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a]);
 

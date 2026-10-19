@@ -2,14 +2,15 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createApiHandler } from "@/lib/api-middleware";
 import * as apiUtils from "@/lib/api-utils";
+import * as serverGuard from "@/lib/server-guard";
 
 describe("api-middleware: same-URL concurrency dedup", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(apiUtils, "rateLimit").mockReturnValue(true);
+    vi.spyOn(serverGuard, "rateLimit").mockReturnValue(true);
     vi.spyOn(apiUtils, "isValidUrl").mockReturnValue(true);
     vi.spyOn(apiUtils, "sanitizeUrl").mockImplementation((url) => url);
-    vi.spyOn(apiUtils, "getClientIP").mockReturnValue("203.0.113.42");
+    vi.spyOn(serverGuard, "getClientIP").mockReturnValue("203.0.113.42");
   });
 
   it("merges concurrent requests for the same URL into one upstream parse", async () => {

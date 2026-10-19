@@ -75,18 +75,18 @@ describe("analytics", () => {
     process.env.TURSO_DB_URL = "libsql://test.turso.io";
     process.env.TURSO_AUTH_TOKEN = "test-token";
     await analytics.recordParse({
-      platform: "huya",
-      url: "https://v.huya.com/xyz",
+      platform: "acfun",
+      url: "https://www.acfun.cn/v/ac1234",
       ip: "203.0.113.6",
       status: "failed",
-      reason: "虎牙视频解析失败",
+      reason: "AcFun 视频解析失败",
     });
     const insert = mockExecute.mock.calls.find(
       ([arg]) => typeof arg === "object" && String(arg.sql).startsWith("INSERT")
     );
     expect(insert).toBeTruthy();
     expect(insert[0].args[3]).toBe("failed");
-    expect(insert[0].args[4]).toBe("虎牙视频解析失败");
+    expect(insert[0].args[4]).toBe("AcFun 视频解析失败");
   });
 
   it("配置后 queryStats 返回聚合结果（含 success/failed 维度）", async () => {

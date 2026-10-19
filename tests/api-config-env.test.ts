@@ -14,9 +14,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 const BUILTIN_IP = "120.42.187.174";
 const BUILTIN_PREFIX_IP = "240e:465:5d60:e459:1";
 
-async function freshApiUtils() {
+// 黑名单与 CORS 在模块加载时求值一次 env，改过 env 必须重新 import 才生效
+async function freshGuard() {
   vi.resetModules();
-  return import("@/lib/api-utils");
+  return import("@/lib/server-guard");
 }
 
 describe("IP 黑名单：env 在内置基线之上追加", () => {
@@ -26,7 +27,7 @@ describe("IP 黑名单：env 在内置基线之上追加", () => {
   });
 
   it("未配置 env 时内置基线照常生效", async () => {
-    const { isBlockedIP } = await freshApiUtils();
+    const { isBlockedIP } = await freshGuard();
     expect(isBlockedIP(BUILTIN_IP)).toBe(true);
     expect(isBlockedIP(BUILTIN_PREFIX_IP)).toBe(true);
     expect(isBlockedIP("8.8.8.8")).toBe(false);
@@ -35,7 +36,7 @@ describe("IP 黑名单：env 在内置基线之上追加", () => {
   it("env 追加的 IP / 前缀生效，且内置基线不丢失", async () => {
     vi.stubEnv("BLOCKED_IPS", "1.2.3.4, 5.6.7.8");
     vi.stubEnv("BLOCKED_IP_PREFIXES", "9.10.11.");
-    const { isBlockedIP } = await freshApiUtils();
+    const { isBlockedIP } = await freshGuard();
 
     expect(isBlockedIP("1.2.3.4")).toBe(true);
     expect(isBlockedIP("5.6.7.8")).toBe(true);
@@ -48,7 +49,7 @@ describe("IP 黑名单：env 在内置基线之上追加", () => {
   it("env 配成空串/空白时不破坏内置基线（不允许静默失效）", async () => {
     vi.stubEnv("BLOCKED_IPS", "   ");
     vi.stubEnv("BLOCKED_IP_PREFIXES", "");
-    const { isBlockedIP } = await freshApiUtils();
+    const { isBlockedIP } = await freshGuard();
 
     expect(isBlockedIP(BUILTIN_IP)).toBe(true);
     expect(isBlockedIP(BUILTIN_PREFIX_IP)).toBe(true);
@@ -56,7 +57,7 @@ describe("IP 黑名单：env 在内置基线之上追加", () => {
 
   it("env 项的大小写与空白被归一化", async () => {
     vi.stubEnv("BLOCKED_IPS", " 1.2.3.4 ");
-    const { isBlockedIP } = await freshApiUtils();
+    const { isBlockedIP } = await freshGuard();
     expect(isBlockedIP("1.2.3.4")).toBe(true);
   });
 });
@@ -68,7 +69,7 @@ describe("CORS 白名单", () => {
   });
 
   it("站点主域与其子域允许", async () => {
-    const { getCorsHeaders } = await freshApiUtils();
+    const { getCorsHeaders } = await freshGuard();
     expect(getCorsHeaders("https://hotier.cc.cd")["Access-Control-Allow-Origin"]).toBe(
       "https://hotier.cc.cd"
     );
@@ -78,7 +79,7 @@ describe("CORS 白名单", () => {
   });
 
   it("本地开发（localhost / 127.0.0.1）现在能拿到 CORS 头", async () => {
-    const { getCorsHeaders } = await freshApiUtils();
+    const { getCorsHeaders } = await freshGuard();
     expect(getCorsHeaders("http://localhost:3000")["Access-Control-Allow-Origin"]).toBe(
       "http://localhost:3000"
     );
@@ -92,7 +93,7 @@ describe("CORS 白名单", () => {
       "CORS_ALLOWED_ORIGINS",
       "https://preview-abc.vercel.app,.example.dev"
     );
-    const { getCorsHeaders } = await freshApiUtils();
+    const { getCorsHeaders } = await freshGuard();
 
     expect(
       getCorsHeaders("https://preview-abc.vercel.app")["Access-Control-Allow-Origin"]
@@ -105,14 +106,14 @@ describe("CORS 白名单", () => {
   });
 
   it("未授权来源不返回 CORS 头", async () => {
-    const { getCorsHeaders } = await freshApiUtils();
+    const { getCorsHeaders } = await freshGuard();
     expect(getCorsHeaders("https://evil.com")).toEqual({});
     expect(getCorsHeaders("")).toEqual({});
     expect(getCorsHeaders(undefined)).toEqual({});
   });
 
   it("命中时带 Vary: Origin，避免缓存把 A 站的头发给 B 站", async () => {
-    const { getCorsHeaders } = await freshApiUtils();
+    const { getCorsHeaders } = await freshGuard();
     expect(getCorsHeaders("https://hotier.cc.cd").Vary).toBe("Origin");
   });
 });

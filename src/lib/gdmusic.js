@@ -311,7 +311,7 @@ export function parsePicResponse(json) {
   return { ok: false, kind: "not-found" };
 }
 
-// —— 失败归类（对齐 QQMUSIC_FAILURE 的分级文案思路） ——
+// —— 失败归类（曲目级 / 源级 / 网络级三档文案） ——
 
 export const MUSIC_FAILURE = {
   NOT_FOUND: "not-found", // 曲目不存在 / 已下架 / 当前源无可用音源

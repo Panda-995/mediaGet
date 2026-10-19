@@ -2,6 +2,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createApiHandler } from "@/lib/api-middleware";
 import * as apiUtils from "@/lib/api-utils";
+import * as serverGuard from "@/lib/server-guard";
 
 // result-cache 整体 mock：单测不依赖真实 Cache API/内存缓存状态
 const resultCacheMocks = vi.hoisted(() => ({
@@ -17,10 +18,10 @@ describe("api-middleware sharedCache (统一入口共享结果缓存)", () => {
     resultCacheMocks.getResultCache.mockReset();
     resultCacheMocks.putResultCache.mockReset();
     resultCacheMocks.resultStale.mockReset();
-    vi.spyOn(apiUtils, "rateLimit").mockReturnValue(true);
+    vi.spyOn(serverGuard, "rateLimit").mockReturnValue(true);
     vi.spyOn(apiUtils, "isValidUrl").mockReturnValue(true);
     vi.spyOn(apiUtils, "sanitizeUrl").mockImplementation((url) => url);
-    vi.spyOn(apiUtils, "getClientIP").mockReturnValue("203.0.113.42");
+    vi.spyOn(serverGuard, "getClientIP").mockReturnValue("203.0.113.42");
   });
 
   const makeHandler = (parseSpy) =>

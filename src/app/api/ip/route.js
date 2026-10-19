@@ -1,4 +1,5 @@
-import { logger, getCorsHeaders } from "@/lib/api-utils";
+import { logger } from "@/lib/api-utils";
+import { getCorsHeaders } from "@/lib/server-guard";
 import { TIMEOUT } from "@/lib/http";
 
 export const runtime = "nodejs";

@@ -1,9 +1,9 @@
+import { logger } from "@/lib/api-utils";
 import {
   deleteCachedResponse,
   getCachedResponse,
-  logger,
   setCacheResponse,
-} from "@/lib/api-utils";
+} from "@/lib/server-guard";
 import {
   GD_BRS,
   GD_DEFAULT_BR,

@@ -16,17 +16,9 @@ import { weiboParse } from "./weiboCore";
 import { xhsParse } from "./xhsCore";
 import { twitterParse, parseVideoId as twitterParseVideoId } from "./twitterCore";
 import { acfunParse } from "./acfunCore";
-import { haokanParse, parseVideoId as haokanParseVideoId } from "./haokanCore";
-import { huyaParse, parseVideoId as huyaParseVideoId } from "./huyaCore";
-import { ppxiaParse } from "./pipixiaCore";
-import { pipigxParse } from "./pipigxCore";
 import { qsmusicParse } from "./qsmusicCore";
-import { quanminkgeParse, parseVideoId as quanminkgeParseVideoId } from "./quanminkgeCore";
-import { sixroomParse, parseVideoId as sixroomParseVideoId } from "./sixroomCore";
 import { xiguaParse, parseVideoId as xiguaParseVideoId } from "./xiguaCore";
-import { xinpianchangParse } from "./xinpianchangCore";
 import { zuiyouParse } from "./zuiyouCore";
-import { qqmusicParse, parseVideoId as qqmusicParseVideoId } from "./qqmusicCore";
 
 function withId(parse, parseVideoId) {
   const parser = (url) => parse(url);
@@ -34,7 +26,7 @@ function withId(parse, parseVideoId) {
   return parser;
 }
 
-/** key 与 lib/platforms.ts 的 PLATFORM_INFO 对齐（小红书=redbook，皮皮虾=pipixia） */
+/** key 与 lib/platforms.ts 的 PLATFORM_INFO 对齐（小红书=redbook） */
 export const parserRegistry = {
   kuaishou: parseKuaishou,
   douyin: douyinParse,
@@ -46,17 +38,9 @@ export const parserRegistry = {
   instagram: parseInstagram,
   youtube: parseYoutube,
   acfun: acfunParse,
-  haokan: withId(haokanParse, haokanParseVideoId),
-  huya: withId(huyaParse, huyaParseVideoId),
-  pipixia: ppxiaParse,
-  pipigx: pipigxParse,
   qsmusic: qsmusicParse,
-  quanminkge: withId(quanminkgeParse, quanminkgeParseVideoId),
-  sixroom: withId(sixroomParse, sixroomParseVideoId),
   xigua: withId(xiguaParse, xiguaParseVideoId),
-  xinpianchang: xinpianchangParse,
   zuiyou: zuiyouParse,
-  qqmusic: withId(qqmusicParse, qqmusicParseVideoId),
 };
 
 export function localParserKeys() {

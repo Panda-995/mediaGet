@@ -80,6 +80,7 @@ export default function GenericParsedVideo({
           accent="neutral"
           tall
           audioUrl={d.audioUrl}
+          qualities={d.qualities}
         />
       )}
 

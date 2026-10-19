@@ -12,16 +12,17 @@
 
 ### 视频解析（首页 `/`）
 
-- 支持 **21 个平台**的视频 / 图文 / 音频解析与下载：抖音、快手、微博、哔哩哔哩、小红书、汽水音乐、皮皮虾、皮皮搞笑、西瓜视频、最右、虎牙、AcFun、全民K歌、QQ音乐、六间房、新片场、好看视频、TikTok、X（Twitter）、Instagram、YouTube
+- 支持 **13 个平台**的视频 / 图文 / 音频解析与下载：抖音、快手、微博、哔哩哔哩、小红书、汽水音乐、西瓜视频、最右、AcFun、TikTok、X（Twitter）、Instagram、YouTube
 - 输入方式：分享链接、整段分享文案（自动提取链接）或 `source+id` 直接解析（部分平台）
 - 自动识别平台与内容类型（视频 / 图文 / 音乐），统一数据契约输出；支持 `fmt=text` 纯文本输出（iOS 快捷指令等）
-- 图文内容图集展示、多选批量下载；哔哩哔哩支持多分 P / 清晰度选择；音乐类内容（汽水音乐 / QQ音乐）直接下载音频
+- 图文内容图集展示、多选批量下载；哔哩哔哩支持多分 P / 清晰度选择；音乐类内容（汽水音乐）直接下载音频
 - 解析结果 24h 共享缓存，再次打开秒回；直链失效自动重解析；同链接并发只抓一次
 - 部分平台说明：
   - 抖音：匿名解析为主链路，可配 `DOUYIN_COOKIE` 增强
   - 哔哩哔哩：强烈建议配 `BILIBILI_COOKIE`（穿透服务器 / 数据中心出口的 -412/-352 风控）
   - 微博：自动游客模式，无需配置 Cookie
   - 小红书 / Instagram：可选配 `XHS_COOKIE` / `IG_COOKIE`（登录墙平台）
+  - 快手：匿名即可解析（昵称 / 头像 / 快手号 / 粉丝 / 关注 / 作品数）；仅作者简介与获赞数需登录态，可选配 `KUAISHOU_COOKIE`（不配或失效自动降级为匿名结果）
   - YouTube：纯 HTTP 多源（Piped / Invidious，可自托管）竞速解析，源不可用时自动降级为官方嵌入播放（无直链）
   - 微信视频号，以及腾讯视频 / 爱奇艺 / 优酷 / 芒果TV / Netflix / Spotify 等付费或 DRM 平台会直接提示不支持
 - 平台可用性依赖各站实时接口，部分平台可能受风控 / 地区影响暂时不可用
@@ -43,7 +44,7 @@
 - Next.js 15（App Router）+ React 19，TypeScript / JavaScript 混合
 - Tailwind CSS；基于 shadcn/ui 规范的基础组件；Lucide 图标
 - 测试：Vitest（纯本地单测 + live 真机测试）
-- 部署：Vercel / Cloudflare Workers（OpenNext）/ Docker 均支持
+- 部署：Vercel / Docker 均支持
 
 ## 本地开发
 
@@ -72,7 +73,6 @@ npm run test:live
 ## 部署
 
 - **Vercel**：仓库导入即用。注意：TikTok 解析依赖 yt-dlp（child_process），Serverless 不可用；`/api/music` 的公共上游对数据中心出口会触发 CF 人机校验，需配置 `MUSIC_API_BASE(S)` 指向可直连的兼容实例（详见 `API.md`）。
-- **Cloudflare Workers**（OpenNext）：`npm run build:cf` 生成 `.open-next/`，`wrangler.toml` 已就绪；敏感 Cookie 在 Worker Settings → Variables and Secrets 配置（CI 已接入自动 `wrangler secret put`）。
 - **Docker**（当前线上正式运行方式）：多阶段 `Dockerfile` 已内置 yt-dlp + ffmpeg（TikTok 解析需要），镜像以非 root 运行：
 
 ```bash

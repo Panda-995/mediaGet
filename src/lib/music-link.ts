@@ -5,7 +5,9 @@
  *   extractMusicUrl    从分享文本中抽出首个 http(s) URL；
  *   parseMusicLink     判断平台并从 URL 中提取曲目 ID（不含重定向跟随）；
  *   isFollowableShareUrl 判断是否属于需「服务端跟随一次重定向」的官方分享短链
- *                      （163cn.tv / t1.kugou.com / c.y.qq.com），由 resolve 路由处理。
+ *                      （163cn.tv / t1.kugou.com / c.y.qq.com / c6.y.qq.com），由 resolve 路由处理；
+ *   detectMusicZoneSongLink 只判定「这是不是音乐区歌曲链接」（不要求带曲目 ID），
+ *                      供视频解析页把歌曲链接导向音乐页。
  *
  * 平台支持梯度（对齐 app/api/music/resolve/route.js）：
  *   netease / tencent / kuwo / kugou —— 均可解析到播放：netease/tencent/kuwo 详情走各
@@ -62,7 +64,7 @@ interface PlatformRule {
 const NET_SONG_ID_RE = /\/song[?#](?:[^#]*[?&])?id=(\d{4,12})/;
 
 /** 官方分享短链：本体不含曲目 ID，需服务端跟随一次重定向后重新解析 */
-const FOLLOWABLE_HOSTS = /^(163cn\.tv|t1\.kugou\.com|c\.y\.qq\.com)$/i;
+const FOLLOWABLE_HOSTS = /^(163cn\.tv|t1\.kugou\.com|c6?\.y\.qq\.com)$/i;
 
 const RULES: PlatformRule[] = [
   {
@@ -166,6 +168,34 @@ export function isFollowableShareUrl(raw: string): boolean {
     );
   } catch {
     return false;
+  }
+}
+
+/** 官方分享短链 host → 平台归属（短链本体取不到曲目 ID，仅用于归属判定与引导文案） */
+const SHORT_LINK_PLATFORM: Record<string, MusicPlatformKey> = {
+  "163cn.tv": "netease",
+  "t1.kugou.com": "kugou",
+  "c.y.qq.com": "tencent",
+  "c6.y.qq.com": "tencent",
+};
+
+/**
+ * 判定文本中的链接是否属于「音乐区歌曲链接」：歌曲页链接（能取到曲目 ID）
+ * 或官方歌曲分享短链（本体无 ID，需服务端跟随）。
+ * 与 parseMusicLink 的区别是不要求拿到曲目 ID，用于视频解析页的导向提示。
+ */
+export function detectMusicZoneSongLink(
+  text: string
+): MusicPlatformKey | null {
+  const url = extractMusicUrl(text);
+  if (!url) return null;
+  const parsed = parseMusicLink(url);
+  if (parsed) return parsed.platform;
+  if (!isFollowableShareUrl(url)) return null;
+  try {
+    return SHORT_LINK_PLATFORM[new URL(url).hostname.toLowerCase()] ?? null;
+  } catch {
+    return null;
   }
 }
 

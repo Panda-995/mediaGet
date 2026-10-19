@@ -17,20 +17,17 @@ import {
 /** 平台 key → 路由目录名（仅列不一致的，与 platforms.ts 的 ROUTE_DIR_ALIAS 对齐） */
 const ROUTE_ALIAS: Record<string, string> = {
   redbook: "xhs",
-  pipixia: "ppxia",
 };
 
 describe("ROUTE_DOMAIN_MAP 由 PLATFORM_INFO 推导", () => {
-  it("每个平台都有对应路由白名单，且用路由目录名（xhs / ppxia）", () => {
+  it("每个平台都有对应路由白名单，且用路由目录名（xhs）", () => {
     const platformKeys = Object.keys(PLATFORM_INFO);
     const routeKeys = Object.keys(ROUTE_DOMAIN_MAP);
 
     expect(routeKeys).toHaveLength(platformKeys.length);
-    // 目录名与平台 key 不一致的两个已正确映射
+    // 目录名与平台 key 不一致的仅小红书，已正确映射
     expect(ROUTE_DOMAIN_MAP.xhs?.name).toBe("小红书");
-    expect(ROUTE_DOMAIN_MAP.ppxia?.name).toBe("皮皮虾");
     expect(ROUTE_DOMAIN_MAP.redbook).toBeUndefined();
-    expect(ROUTE_DOMAIN_MAP.pipixia).toBeUndefined();
   });
 
   it("每条白名单的 hosts 都来自对应平台的主域 + 短链域", () => {
@@ -73,6 +70,36 @@ describe("identifyPlatform 与平台配置一致", () => {
     expect(identifyPlatform("https://www.youtube-nocookie.com/watch?v=x")).toBe(
       "youtube"
     );
+  });
+});
+
+describe("已下线平台不再被识别", () => {
+  // 皮皮虾 / 皮皮搞笑 / 虎牙 / 全民K歌 / 六间房 / 新片场 / 好看视频 明确不做：
+  // 平台配置里没有它们的域名，统一入口只能回「无法识别的视频平台」，
+  // 这里防止哪天从别处把域名抄回 PLATFORM_INFO。
+  it("7 个下线平台的域名一律识别不出平台", () => {
+    for (const host of [
+      "pipix.com",
+      "h5.pipigx.com",
+      "huya.com",
+      "kg.qq.com",
+      "6.cn",
+      "xinpianchang.com",
+      "haokan.baidu.com",
+    ]) {
+      expect(identifyPlatform(`https://${host}/x`), `${host} 应已下线`).toBeNull();
+    }
+  });
+
+  // QQ音乐 不属于「不做」，而是换区：歌曲链接由音乐区 lib/music-link.ts + /api/music/resolve 承载，
+  // 视频解析核心不应再认识它，否则会在首页拉起一条已删除的解析链路。
+  it("QQ音乐 域名不再被视频解析核心识别（改由音乐区承载）", () => {
+    for (const host of ["y.qq.com", "i.y.qq.com", "c6.y.qq.com"]) {
+      expect(
+        identifyPlatform(`https://${host}/x`),
+        `${host} 应已移出视频解析核心`
+      ).toBeNull();
+    }
   });
 });
 

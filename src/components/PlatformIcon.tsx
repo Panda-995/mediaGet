@@ -8,21 +8,13 @@ const MONOGRAM: Partial<Record<VideoPlatformKey, string>> = {
   weibo: "微",
   xhs: "红",
   qsmusic: "汽",
-  pipigx: "皮",
-  ppxia: "虾",
   xigua: "西",
   zuiyou: "右",
-  huya: "虎",
   acfun: "A",
-  quanminkge: "K",
-  sixroom: "六",
-  xinpianchang: "新",
-  haokan: "好",
   twitter: "X",
   tiktok: "T",
   instagram: "IG",
   youtube: "YT",
-  qqmusic: "Q",
 };
 
 /**

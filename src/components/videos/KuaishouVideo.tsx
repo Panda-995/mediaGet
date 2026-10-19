@@ -145,6 +145,7 @@ export default function KuaishouVideo({ data }: KuaishouVideoProps) {
           downloadText="下载视频"
           audioUrl={kuaishouData.audioUrl}
           downloadName={downloadName}
+          qualities={kuaishouData.qualities}
         />
       )}
 

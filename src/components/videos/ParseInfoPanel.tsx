@@ -183,12 +183,13 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
       format: () => "视频",
     },
   ],
-  // B站图文动态（/opus/）：动态标题 + 发布时间 + 互动统计（统计由后端归一到 stat.like/reply/share）
+  // B站图文动态（/opus/）：动态标题 + 发布时间 + 互动统计（统计由后端归一到 stat.like/reply/favorite/share）
   bilibiliOpus: [
     { key: "title", label: "动态标题" },
     { key: "time", label: "发布时间", format: formatTime },
     { key: "stat.like", label: "点赞", format: formatCount },
     { key: "stat.reply", label: "评论", format: formatCount },
+    { key: "stat.favorite", label: "收藏", format: formatCount },
     { key: "stat.share", label: "分享", format: formatCount },
     TYPE_FIELD,
   ],
@@ -216,6 +217,12 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
       format: (v, d) => formatCount(pickFirst(d, ["likeCount", "like"])),
     },
     {
+      // 收藏数是作品级的（内核从 H5 顶层 counts.collectionCount 取，与作者粉丝数同一个对象）
+      key: "collectionCount",
+      label: "收藏",
+      format: (v, d) => formatCount(pickFirst(d, ["collectionCount", "favorite"])),
+    },
+    {
       key: "commentCount",
       label: "评论",
       format: (v, d) => formatCount(pickFirst(d, ["commentCount", "reply"])),
@@ -233,24 +240,21 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     { key: "duration", label: "视频时长", format: formatDuration },
     TYPE_FIELD,
   ],
-  // 博主卡已展示：昵称 / 微博号 / 简介 / 关注 / 粉丝，这里只保留微博内容相关信息
+  // 博主卡已展示：昵称 / 微博号 / 认证 / 简介 / 关注 / 粉丝 / 获赞 / 微博数，
+  // 这里只保留微博内容相关信息（清晰度与时长仅单P 视频帖下发，多P 走下载行逐P 徽标）
   weibo: [
     { key: "time", label: "发布时间", format: formatTime },
     { key: "like", label: "点赞", format: formatCount },
     { key: "reply", label: "评论", format: formatCount },
     { key: "share", label: "转发", format: formatCount },
     { key: "videoCount", label: "分P数量", format: formatVideoCount },
+    { key: "qualityLabel", label: "清晰度" },
+    { key: "duration", label: "视频时长", format: formatDuration },
+    { key: "ipRegion", label: "IP属地" },
     TYPE_FIELD,
   ],
   qsmusic: [
     { key: "name", label: "歌曲" },
-    { key: "core", label: "来源" },
-    TYPE_FIELD,
-  ],
-  qqmusic: [
-    { key: "name", label: "歌曲" },
-    { key: "author", label: "歌手" },
-    { key: "album", label: "专辑" },
     { key: "core", label: "来源" },
     TYPE_FIELD,
   ],

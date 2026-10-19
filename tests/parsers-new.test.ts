@@ -79,6 +79,26 @@ describe("instagram helpers", () => {
     expect(video.type).toBe("video");
     expect(video.url).toBe("https://v.mp4");
     expect(video.duration).toBe(12000);
+    // 只有 video_url 一条直链时不出档位
+    expect("qualities" in video).toBe(false);
+
+    // video_versions 全档位：按高度降序、同尺寸去重，主直链跟最高档
+    const versions = normalizeInstagramMedia({
+      __typename: "GraphVideo",
+      is_video: true,
+      display_url: "https://cover.jpg",
+      owner: { username: "someone" },
+      video_versions: [
+        { width: 720, height: 1280, url: "https://v/720.mp4" },
+        { width: 1080, height: 1920, url: "https://v/1080.mp4" },
+        { width: 1080, height: 1920, url: "https://v/1080-dup.mp4" },
+      ],
+    });
+    expect(versions.url).toBe("https://v/1080.mp4");
+    expect(versions.qualities).toEqual([
+      { quality: 1920, label: "1920p", url: "https://v/1080.mp4" },
+      { quality: 1280, label: "1280p", url: "https://v/720.mp4" },
+    ]);
 
     const album = normalizeInstagramMedia({
       __typename: "GraphSidecar",

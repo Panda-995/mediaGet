@@ -7,6 +7,44 @@
  */
 
 import { logger } from "./api-utils";
+import { buildQualityList } from "./quality";
+
+/** 抖音播放直链去水印前缀（playwm / play_wm → play） */
+function cleanDouyinPlayUrl(raw) {
+  return String(raw || "")
+    .replace("playwm", "play")
+    .replace("play_wm", "play");
+}
+
+/**
+ * 抖音 `video.bit_rate` 档位表 → 契约 qualities。
+ * 每档的直链在 `bit_rate[].play_addr.url_list`（同样带 playwm，需要去水印），
+ * 可展示名取 `gear_name`（如 "1080p"），缺失时按 play_addr.height 兜底。
+ * 该字段只在部分分享页/详情响应里出现；没有就维持单直链，不造档位。
+ */
+function pickDouyinQualities(video) {
+  const list = Array.isArray(video?.bit_rate)
+    ? video.bit_rate
+    : Array.isArray(video?.bitRateList)
+      ? video.bitRateList
+      : [];
+  const entries = list
+    .map((item) => {
+      const play = item?.play_addr || item?.playAddr || {};
+      const raw = Array.isArray(play.url_list) ? play.url_list[0] : "";
+      const height = Number(play.height || item?.height) || 0;
+      const bitrate = Number(item?.bit_rate || item?.bitRate) || 0;
+      return {
+        url: cleanDouyinPlayUrl(raw),
+        quality: height || bitrate,
+        label: item?.gear_name || item?.gearName || (height ? `${height}p` : ""),
+        sort: height || bitrate,
+      };
+    })
+    .filter((entry) => entry.url)
+    .sort((a, b) => b.sort - a.sort);
+  return buildQualityList(entries);
+}
 
 /**
  * 判断 loaderData 是否包含有效视频数据
@@ -151,6 +189,10 @@ export function parseVideoData(videoInfo) {
       videoResUrl = `https://www.iesdouyin.com/aweme/v1/play/?video_id=${play.uri}&ratio=1080p&line=0`;
     }
 
+    // bit_rate 档位表存在时，主直链跟随最高档（play_addr 只是默认档）
+    const qualities = isVideo ? pickDouyinQualities(videoData.video) : undefined;
+    if (qualities) videoResUrl = qualities[0].url;
+
     // 背景音乐/原声音频直链（music.play_url.url_list[0]），供「下载音频」使用
     // 原声视频的 music 即视频本身的声音，配乐视频为背景音乐
     const audioUrl = videoData.music?.play_url?.url_list?.[0]
@@ -174,6 +216,7 @@ export function parseVideoData(videoInfo) {
           : images[0] || "",
         type: isVideo ? "video" : "image",
         url: videoResUrl || undefined,
+        ...(qualities ? { qualities } : {}),
         images: images.length > 0 ? images : undefined,
         // 视频时长（毫秒），前端据此判断长视频不走代理、引导新窗口播放
         duration: videoData.video?.duration || 0,

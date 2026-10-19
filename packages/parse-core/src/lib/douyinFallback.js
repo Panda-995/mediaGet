@@ -12,6 +12,7 @@
 
 import { createHash } from "crypto";
 import { logger } from "./api-utils";
+import { guardedFetch } from "../runtime";
 
 const SITE_UA =
   "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36";
@@ -91,11 +92,11 @@ async function try17change(url) {
   const body = { link: url };
   let resp;
   try {
-    resp = await fetch(PARSE_17, {
+    resp = await guardedFetch(PARSE_17, {
       method: "POST",
       headers: sign17(body),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT),
+      timeoutMs: BACKEND_TIMEOUT,
     });
   } catch (e) {
     return { ok: false, error: `17change: ${e.message.slice(0, 80)}` };
@@ -117,9 +118,9 @@ async function try17change(url) {
 async function tryDouyinWtf(url) {
   let resp;
   try {
-    resp = await fetch(
+    resp = await guardedFetch(
       `${EVIL_HYBRID}?url=${encodeURIComponent(url)}&minimal=true`,
-      { headers: { "User-Agent": SITE_UA, Accept: "application/json" }, signal: AbortSignal.timeout(BACKEND_TIMEOUT) }
+      { headers: { "User-Agent": SITE_UA, Accept: "application/json" }, timeoutMs: BACKEND_TIMEOUT }
     );
   } catch (e) {
     return { ok: false, error: `douyin.wtf: ${e.message.slice(0, 80)}` };
@@ -143,9 +144,9 @@ async function tryDouyinWtf(url) {
 async function tryYujn(url) {
   let resp;
   try {
-    resp = await fetch(
+    resp = await guardedFetch(
       `${YUJN_DY}?msg=${encodeURIComponent(url)}`,
-      { headers: { "User-Agent": SITE_UA, Accept: "application/json" }, signal: AbortSignal.timeout(BACKEND_TIMEOUT) }
+      { headers: { "User-Agent": SITE_UA, Accept: "application/json" }, timeoutMs: BACKEND_TIMEOUT }
     );
   } catch (e) {
     return { ok: false, error: `yujn: ${e.message.slice(0, 80)}` };
@@ -166,11 +167,11 @@ async function tryYujn(url) {
 async function tryTenapi(url) {
   let resp;
   try {
-    resp = await fetch(TENAPI_V2, {
+    resp = await guardedFetch(TENAPI_V2, {
       method: "POST",
       headers: { "User-Agent": SITE_UA },
       body: new URLSearchParams({ url }),
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT),
+      timeoutMs: BACKEND_TIMEOUT,
     });
   } catch (e) {
     return { ok: false, error: `tenapi: ${e.message.slice(0, 80)}` };
@@ -199,7 +200,7 @@ export async function douyinPublicFallback(url) {
   const errors = [];
   const results = await Promise.allSettled(
     backends.map(async (fn) => {
-      // 每个 API 独立超时由 AbortSignal 控制；整体由 RACE_TIMEOUT 兜底
+      // 每个 API 独立超时由 timeoutMs 控制；整体由 RACE_TIMEOUT 兜底
       return await fn(url);
     })
   );
@@ -226,11 +227,11 @@ export async function public17Parse(url) {
   const body = { link: url };
   let resp;
   try {
-    resp = await fetch(PARSE_17, {
+    resp = await guardedFetch(PARSE_17, {
       method: "POST",
       headers: sign17(body),
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(BACKEND_TIMEOUT),
+      timeoutMs: BACKEND_TIMEOUT,
     });
   } catch (e) {
     return { ok: false, error: `17change: ${e.message.slice(0, 80)}` };

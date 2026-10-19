@@ -5,44 +5,8 @@ import { public17Parse } from "@/lib/douyinFallback";
 
 export const runtime = "nodejs";
 
-// 快手图片直链（a.yximgs.com / a.kwimgs.com）有 Referer 防盗链、部分为 http，
-// 浏览器直链加载会 403 或「混合内容」拦截。统一包成站内 /api/image 代理
-// （服务端带快手 Referer 防 403），与小红书/B站处理一致。
-function proxifyImage(url, fallbacks = []) {
-  if (!url || typeof url !== "string") return url;
-  if (
-    /^https?:\/\//.test(url) &&
-    /\.(?:jpg|jpeg|png|webp|gif|bmp|heic|heif)(?:[?#]|$)/i.test(url)
-  ) {
-    let proxy = `/api/image?url=${encodeURIComponent(url)}`;
-    // CDN 容错：快手头像同资源有多个 CDN 节点（headUrls），部分节点 DNS 解析失败，
-    // 把备选地址一并传给代理，主地址失败时按序重试。
-    if (fallbacks.length) {
-      proxy += `&fallback=${fallbacks.map(encodeURIComponent).join(",")}`;
-    }
-    return proxy;
-  }
-  return url;
-}
-
-/** 仅代理图片字段（视频直链不代理，避免拖慢播放） */
-function proxifyData(data) {
-  if (!data || typeof data !== "object") return data;
-  if (typeof data.authorAvatar === "string") {
-    const fallbacks = Array.isArray(data.authorAvatarFallbacks)
-      ? data.authorAvatarFallbacks
-      : [];
-    data.authorAvatar = proxifyImage(data.authorAvatar, fallbacks);
-    delete data.authorAvatarFallbacks;
-  }
-  if (typeof data.coverUrl === "string") {
-    data.coverUrl = proxifyImage(data.coverUrl);
-  }
-  if (Array.isArray(data.images)) {
-    data.images = data.images.map(proxifyImage);
-  }
-  return data;
-}
+// 图片直链改写成站内 /api/image 代理由出口层统一做（createApiHandler 在 normalizeResult
+// 之后调 proxifyResult，口径与实现见 src/lib/image-proxy.js），本路由不再自己包一遍。
 
 // 使用中间件处理请求
 async function kuaishouParse(url) {
@@ -52,7 +16,7 @@ async function kuaishouParse(url) {
     // 快手备用通道：主解析失败（页面结构变化/云端抓取超时/反爬）时，
     // 用 17change 公共 API 兜底（参考 video-unwatermark webparser 引擎，
     // 与 /api/parse 统一入口的兜底逻辑一致，实测对快手可用）。
-    if (!result || result.code !== 200) {
+    if (result.code !== 200) {
       try {
         const fb = await public17Parse(url);
         if (fb.ok && fb.url) {
@@ -60,7 +24,7 @@ async function kuaishouParse(url) {
           return formatResponse(200, "解析成功", {
             photoUrl: fb.url,
             caption: fb.title || "视频",
-            coverUrl: proxifyImage(fb.cover || ""),
+            coverUrl: fb.cover || "",
             authorName: fb.author || "",
             source: fb.key,
           });
@@ -68,12 +32,7 @@ async function kuaishouParse(url) {
       } catch (error) {
         logger.warn(`快手公共 API 兜底异常: ${error.message}`);
       }
-      if (!result) {
-        return formatResponse(404, "解析失败，可能是链接格式不支持或内容无法访问");
-      }
-    }
-    if (result.code === 200 && result.data) {
-      proxifyData(result.data);
+      // 主解析与备用通道都没结果：内核已给出失败信封，原样透出
     }
     return result;
   } catch (error) {

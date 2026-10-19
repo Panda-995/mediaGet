@@ -6,6 +6,7 @@ import {
   extractMusicUrl,
   parseMusicLink,
   isFollowableShareUrl,
+  detectMusicZoneSongLink,
   normalizePlatformKey,
 } from "@/lib/music-link";
 import {
@@ -180,6 +181,8 @@ describe("isFollowableShareUrl（官方短链重定向白名单）", () => {
     "https://163cn.tv/x1y2Z",
     "https://t1.kugou.com/AbCdEf1234567",
     "https://c.y.qq.com/base/fcgi-bin/u?__=xxxxxx",
+    // App 分享短链的真实 host 带 6（c6.y.qq.com），旧白名单只写 c. 会漏掉手机分享链接
+    "https://c6.y.qq.com/base/fcgi-bin/u?__=AbCdEfGh=",
   ])("允许 %s", (url) => {
     expect(isFollowableShareUrl(url)).toBe(true);
   });
@@ -188,6 +191,35 @@ describe("isFollowableShareUrl（官方短链重定向白名单）", () => {
     expect(isFollowableShareUrl("https://evil.com/r?u=")).toBe(false);
     expect(isFollowableShareUrl("ftp://163cn.tv/x")).toBe(false);
     expect(isFollowableShareUrl("")).toBe(false);
+  });
+});
+
+describe("detectMusicZoneSongLink（视频页据此把歌曲链接导向 /music）", () => {
+  it.each([
+    ["https://y.qq.com/n/ryqq/songDetail/0039MnYb0p1iXz", "tencent"],
+    ["https://i.y.qq.com/v8/playsong.html?songmid=0039MnYb0qxYhV", "tencent"],
+    ["https://c6.y.qq.com/base/fcgi-bin/u?__=AbCdEfGh=", "tencent"],
+    ["https://music.163.com/song?id=186016", "netease"],
+    ["https://163cn.tv/x1y2Z", "netease"],
+    ["https://www.kugou.com/song/#hash=abcdefghijklmnopqrstuvwxyz123456", "kugou"],
+    ["https://www.kuwo.cn/play_detail/12345678", "kuwo"],
+    // 整段分享文案同样判定（视频页拿到的是用户原文）
+    [
+      "分享周杰伦的单曲《晴天》: https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV（来自QQ音乐）",
+      "tencent",
+    ],
+  ])("%s → %s", (input, expected) => {
+    expect(detectMusicZoneSongLink(input)).toBe(expected);
+  });
+
+  it("视频链接与非歌曲 QQ 域名不误判", () => {
+    expect(detectMusicZoneSongLink("https://v.douyin.com/kB9dI20w7vk/")).toBeNull();
+    // mp.weixin.qq.com 属于 *.qq.com，但既取不到曲目 ID 也不在短链白名单里
+    expect(detectMusicZoneSongLink("https://mp.weixin.qq.com/s/abc123")).toBeNull();
+    // QQ 歌单页不是单曲链接
+    expect(detectMusicZoneSongLink("https://y.qq.com/n/ryqq/playlist/1234567890")).toBeNull();
+    expect(detectMusicZoneSongLink("没有链接")).toBeNull();
+    expect(detectMusicZoneSongLink("")).toBeNull();
   });
 });
 

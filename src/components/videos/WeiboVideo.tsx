@@ -24,8 +24,9 @@ import TruncatedText from "@/components/ui/truncated-text";
 /**
  * 微博结果卡片 —— 结构对齐小红书标准：
  * 博主信息卡 → 视频/图集 → 博文（可复制）→ 作品信息面板。
- * 博主卡展示主页公开信息（昵称可点主页 / 微博号 / 简介 / 关注 / 粉丝），
- * 作品信息面板只保留与内容相关的字段（发布时间 / 点赞 / 评论 / 转发 / 类型）。
+ * 博主卡展示作者接口（桌面 ajax/profile/info）的信息（昵称可点主页 / 微博号 / 认证 /
+ * 简介 / 关注 / 粉丝 / 获赞 / 微博数），
+ * 作品信息面板只保留与内容相关的字段（发布时间 / 点赞 / 评论 / 转发 / IP属地 / 类型）。
  */
 interface WeiboVideoProps {
   data: ApiResponse;
@@ -58,10 +59,12 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
   const isText = !hasVideo && !hasImages;
 
 
-  // 博主主页公开信息徽标：关注 / 粉丝（微博无「获赞」公开字段，缺失自动隐藏）
+  // 作者公开信息徽标：关注 / 粉丝 / 获赞 / 微博数（全部来自桌面作者接口，缺失自动隐藏）
   const authorBadges: { label: string; value?: number }[] = [
     { label: "关注", value: weiboData.followingCount },
     { label: "粉丝", value: weiboData.followerCount },
+    { label: "获赞", value: weiboData.totalFavorited },
+    { label: "微博", value: weiboData.statusesCount },
   ];
 
   // 净化文件名片段：共享工具见 @/utils/filename，移除文件系统不安全的字符并限长。
@@ -151,6 +154,14 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
                   className="mt-0.5 text-[13px] text-muted truncate"
                 />
               )}
+              {/* 认证说明（作者接口 verified_reason）：无认证的号拿不到，按无值隐藏 */}
+              {weiboData.verifiedReason && (
+                <TruncatedText
+                  as="p"
+                  text={`认证：${weiboData.verifiedReason}`}
+                  className="mt-0.5 text-[13px] text-muted truncate"
+                />
+              )}
               {weiboData.sign && (
                 <p className="mt-0.5 flex items-start gap-1 text-[13px] text-muted">
                   <span className="flex-shrink-0">简介：</span>
@@ -197,6 +208,7 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
           accent="red"
           inline
           parts={hasMultiVideo ? videos : undefined}
+          qualities={weiboData.qualities}
           downloadName={downloadName}
           downloadText={hasMultiVideo ? "下载视频" : undefined}
           onDownloadClick={hasMultiVideo ? scrollToDownload : undefined}
@@ -286,8 +298,9 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
       {/* 微博信息：发布时间 / 点赞 / 评论 / 转发（博主卡已展示作者信息） */}
       <ParseInfoPanel platform="weibo" data={weiboData} title="微博信息" />
 
-      {/* 多P下载选项：分P逐条列出，每条一个下载按钮（微博每P单一清晰度直链，
-          无需B站的档位列表）。文件名带P序号，逐P下载互不覆盖 */}
+      {/* 多P下载选项：分P逐条列出，每条一个下载按钮。
+          多档位视频每P行内显示清晰度下拉（playback_list 全档位），单档仍展示徽标。
+          文件名带P序号，逐P下载互不覆盖 */}
       {hasVideo && hasMultiVideo && (
         <Card id="weibo-download" className="p-5 scroll-mt-24">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -337,8 +350,9 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
                 coverAlt={item.title || `视频 ${index + 1}`}
                 title={`P${index + 1}: ${item.title || weiboData.title || "视频"}`}
                 durationText={item.durationFormat}
-                badge="720P"
+                badge={item.qualityLabel}
                 href={item.url}
+                qualities={item.qualities}
                 buildHref={(url) =>
                   `/api/video-proxy?url=${encodeURIComponent(
                     url

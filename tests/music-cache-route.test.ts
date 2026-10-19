@@ -32,7 +32,7 @@ vi.mock("@/lib/music-cache-store", () => ({
 }));
 
 const rate = vi.hoisted(() => ({ allow: true, blocked: false }));
-vi.mock("@/lib/api-utils", async (importOriginal) => {
+vi.mock("@/lib/server-guard", async (importOriginal) => {
   const actual = await importOriginal<any>();
   return {
     ...actual,

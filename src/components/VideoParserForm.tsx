@@ -10,6 +10,10 @@ import {
   detectPlatform,
   hasValidVideoUrl,
 } from "@/utils/share";
+import {
+  detectMusicZoneSongLink,
+  MUSIC_PLATFORM_LABEL,
+} from "@/lib/music-link";
 import PlatformIcon from "@/components/PlatformIcon";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -21,6 +25,18 @@ import {
   Zap,
   ScanSearch,
 } from "lucide-react";
+
+/**
+ * 识别不出视频平台时的文案：命中音乐区歌曲链接（含官方歌曲短链）则导向音乐解析页，
+ * 其余一律通用文案——已下线平台不在这里做专属黑名单。
+ */
+function unrecognizedHintFor(text: string): string {
+  const musicKey = detectMusicZoneSongLink(text);
+  if (musicKey) {
+    return `${MUSIC_PLATFORM_LABEL[musicKey]}歌曲请前往音乐解析页（/music）解析`;
+  }
+  return "无法识别的视频平台，请粘贴支持的平台链接（如抖音/快手/B站等）";
+}
 
 interface VideoParserFormProps {
   /**
@@ -175,8 +191,8 @@ export default function VideoParserForm({
         if (controller.signal.aborted) return;
 
         if (data.code === 1 || data.code === 200) {
-          // 统一入口返回的 platform 是后端 key（如 redbook/pipixia），
-          // 覆盖为前端 key（xhs/ppxia），保证渲染注册表按前端 key 命中。
+          // 统一入口返回的 platform 是后端 key（如 redbook），
+          // 覆盖为前端 key（xhs），保证渲染注册表按前端 key 命中。
           data.platform = platform as VideoPlatformKey;
           onResult(data, "");
           setHasResult(true);
@@ -241,7 +257,7 @@ export default function VideoParserForm({
           setUrl("");
           setPlatform("auto");
           onPlatformChange?.("auto");
-          onResult(null, "无法识别的视频平台，请粘贴支持的平台链接（如抖音/快手/B站等）");
+          onResult(null, unrecognizedHintFor(text));
           return;
         }
         setUrl(extractedUrl);
@@ -396,7 +412,7 @@ export default function VideoParserForm({
     // 链接不属于任何受支持平台：提示用户，不发起解析
     const detected = detectPlatform(url);
     if (!detected) {
-      onResult(null, "无法识别的视频平台，请粘贴支持的平台链接（如抖音/快手/B站等）");
+      onResult(null, unrecognizedHintFor(url));
       return;
     }
     // 手动指定平台时做一致性校验，避免把抖音链接发给 B 站接口等错配请求；

@@ -16,16 +16,16 @@
  */
 
 import { createApiHandler, safeStatus } from "@/lib/api-middleware";
+import { isValidUrl, logger } from "@/lib/api-utils";
 import {
   getClientIP,
   getCorsHeaders,
   isBlockedIP,
-  isValidUrl,
-  logger,
   rateLimit,
-} from "@/lib/api-utils";
+} from "@/lib/server-guard";
 import { extractUrlFromShareText } from "@/lib/share-text";
 import { normalizeResult } from "@/lib/normalize-result";
+import { proxifyResult } from "@/lib/image-proxy";
 import { PLATFORM_INFO } from "@/lib/platforms";
 import { honeypotResponse } from "@/lib/honeypot";
 import { unifiedParser } from "@/lib/unified-parser";
@@ -174,7 +174,10 @@ export async function handleParseRequest(request, { textOnly = false } = {}) {
     if (!rateLimit(clientIP)) {
       return respond(corsHeaders, { code: 429, msg: "请求过于频繁，请稍后再试" }, safeStatus(429));
     }
-    const result = normalizeResult(await unifiedParser("", { source, id }));
+    // ID 直查不过 createApiHandler，图片改写要自己挂上（否则与 URL 模式出参形态不一致）
+    const result = proxifyResult(
+      normalizeResult(await unifiedParser("", { source, id }))
+    );
     return Response.json(result, {
       status: safeStatus(result?.code || 200),
       headers: corsHeaders,

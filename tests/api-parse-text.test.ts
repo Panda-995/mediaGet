@@ -1,6 +1,7 @@
 // @ts-nocheck
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import * as apiUtils from "@/lib/api-utils";
+import * as serverGuard from "@/lib/server-guard";
 import * as resultCache from "@/lib/result-cache";
 
 // 分享文案接口：提取链接后交给 unifiedParser，这里 mock 掉真实解析
@@ -10,22 +11,23 @@ vi.mock("@/lib/unified-parser", () => ({
 }));
 
 import { GET, POST } from "@/app/api/parse-text/route";
+import { GET as PARSE_GET } from "@/app/api/parse/route.js";
+
+beforeEach(() => {
+  vi.restoreAllMocks();
+  vi.spyOn(serverGuard, "rateLimit").mockReturnValue(true);
+  vi.spyOn(apiUtils, "sanitizeUrl").mockImplementation((url) => url);
+  vi.spyOn(serverGuard, "getClientIP").mockReturnValue("203.0.113.42");
+  // 中间件校验用真实 new URL 行为
+  vi.spyOn(apiUtils, "isValidUrl").mockImplementation(
+    (s) => { try { new URL(s); return true; } catch { return false; } }
+  );
+  vi.spyOn(resultCache, "getResultCache").mockResolvedValue(null);
+  unifiedParserMock.unifiedParser.mockReset();
+  unifiedParserMock.unifiedParser.mockResolvedValue({ code: 1, msg: "ok" });
+});
 
 describe("api/parse-text (分享文案接口)", () => {
-  beforeEach(() => {
-    vi.restoreAllMocks();
-    vi.spyOn(apiUtils, "rateLimit").mockReturnValue(true);
-    vi.spyOn(apiUtils, "sanitizeUrl").mockImplementation((url) => url);
-    vi.spyOn(apiUtils, "getClientIP").mockReturnValue("203.0.113.42");
-    // 中间件校验用真实 new URL 行为
-    vi.spyOn(apiUtils, "isValidUrl").mockImplementation(
-      (s) => { try { new URL(s); return true; } catch { return false; } }
-    );
-    vi.spyOn(resultCache, "getResultCache").mockResolvedValue(null);
-    unifiedParserMock.unifiedParser.mockReset();
-    unifiedParserMock.unifiedParser.mockResolvedValue({ code: 1, msg: "ok" });
-  });
-
   it("快手文案：链接后跟空格+中文描述也能提取", async () => {
     const shareText =
       "https://v.kuaishou.com/Ku1rFvu1 你的新版奶爸来了唷\"转场 \"cos \"扁鹊\"\"王者荣耀cos 该作品在快手被播放过49.6万次，点击链接，打开【快手】直接观看！";
@@ -116,5 +118,41 @@ describe("api/parse-text (分享文案接口)", () => {
     expect(unifiedParserMock.unifiedParser).toHaveBeenCalledWith(
       "https://v.kuaishou.com/abcdEF"
     );
+  });
+});
+
+describe("api/parse source+id（ID 直查不走 createApiHandler）", () => {
+  it("ID 分支同样把直链改写成站内图片代理", async () => {
+    unifiedParserMock.unifiedParser.mockResolvedValue({
+      code: 200,
+      platform: "douyin",
+      data: {
+        title: "ID 直查",
+        url: "https://example.com/play/video.mp4",
+        cover: "https://p3-sign.douyinpic.com/cover~tplv-dy.jpeg",
+        avatar: "https://p3-sign.douyinpic.com/avatar.jpeg",
+        coverUrlFallbacks: ["https://cdn2.example.com/cover.jpeg"],
+      },
+    });
+
+    const res = await PARSE_GET(
+      new Request("http://127.0.0.1/api/parse?source=douyin&id=1234567890")
+    );
+    const json = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(unifiedParserMock.unifiedParser).toHaveBeenCalledWith("", {
+      source: "douyin",
+      id: "1234567890",
+    });
+    expect(json.data.url).toBe("https://example.com/play/video.mp4");
+    expect(json.data.cover).toBe(
+      "/api/image?url=" +
+        encodeURIComponent("https://p3-sign.douyinpic.com/cover~tplv-dy.jpeg") +
+        "&fallback=" +
+        encodeURIComponent("https://cdn2.example.com/cover.jpeg")
+    );
+    expect(json.data.avatar).toMatch(/^\/api\/image\?url=/);
+    expect(json.data.coverUrlFallbacks).toBeUndefined();
   });
 });

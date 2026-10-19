@@ -2,19 +2,20 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { createApiHandler } from "@/lib/api-middleware";
 import * as apiUtils from "@/lib/api-utils";
+import * as serverGuard from "@/lib/server-guard";
 
 describe("api-middleware", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
-    vi.spyOn(apiUtils, "rateLimit").mockReturnValue(true);
+    vi.spyOn(serverGuard, "rateLimit").mockReturnValue(true);
     vi.spyOn(apiUtils, "isValidUrl").mockReturnValue(true);
     vi.spyOn(apiUtils, "sanitizeUrl").mockImplementation((url) => url);
-    vi.spyOn(apiUtils, "getClientIP").mockReturnValue("203.0.113.42");
+    vi.spyOn(serverGuard, "getClientIP").mockReturnValue("203.0.113.42");
   });
 
   it("skips cache lookup when shouldCache is false", async () => {
-    const getCacheSpy = vi.spyOn(apiUtils, "getCachedResponse");
-    const setCacheSpy = vi.spyOn(apiUtils, "setCacheResponse");
+    const getCacheSpy = vi.spyOn(serverGuard, "getCachedResponse");
+    const setCacheSpy = vi.spyOn(serverGuard, "setCacheResponse");
     const parseSpy = vi.fn().mockResolvedValue({ code: 1, msg: "ok" });
     const handler = createApiHandler(parseSpy, {
       shouldCache: false,
@@ -36,7 +37,7 @@ describe("api-middleware", () => {
   });
 
   it("uses cache by default", async () => {
-    vi.spyOn(apiUtils, "getCachedResponse").mockReturnValue({ code: 1, msg: "cached" });
+    vi.spyOn(serverGuard, "getCachedResponse").mockReturnValue({ code: 1, msg: "cached" });
     const parseSpy = vi.fn();
     const handler = createApiHandler(parseSpy);
 
@@ -49,7 +50,7 @@ describe("api-middleware", () => {
   });
 
   it("blocks requests when rate limit exceeded", async () => {
-    vi.spyOn(apiUtils, "rateLimit").mockReturnValue(false);
+    vi.spyOn(serverGuard, "rateLimit").mockReturnValue(false);
     const parseSpy = vi.fn();
     const handler = createApiHandler(parseSpy);
 
@@ -78,7 +79,7 @@ describe("api-middleware", () => {
   });
 
   it("returns CORS header for allowed origin (*.hotier.cc.cd)", async () => {
-    vi.spyOn(apiUtils, "getCachedResponse").mockReturnValue(null);
+    vi.spyOn(serverGuard, "getCachedResponse").mockReturnValue(null);
     const parseSpy = vi.fn().mockResolvedValue({ code: 1, msg: "ok" });
     const handler = createApiHandler(parseSpy, { shouldCache: false });
 
@@ -91,7 +92,7 @@ describe("api-middleware", () => {
   });
 
   it("does not return CORS header for unauthorized origin", async () => {
-    vi.spyOn(apiUtils, "getCachedResponse").mockReturnValue(null);
+    vi.spyOn(serverGuard, "getCachedResponse").mockReturnValue(null);
     const parseSpy = vi.fn().mockResolvedValue({ code: 1, msg: "ok" });
     const handler = createApiHandler(parseSpy, { shouldCache: false });
 
@@ -122,7 +123,7 @@ describe("api-middleware", () => {
 
   it("returns honeypot (200 + 演示文案) for blacklisted IP instead of 403", async () => {
     // 黑名单 IP 直连解析接口 → 不再 403，而是 200 + 结构化蜜罐数据（演示文案）
-    vi.spyOn(apiUtils, "getClientIP").mockReturnValue("120.42.187.174");
+    vi.spyOn(serverGuard, "getClientIP").mockReturnValue("120.42.187.174");
     const parseSpy = vi.fn();
     const handler = createApiHandler(parseSpy, { shouldCache: false });
 

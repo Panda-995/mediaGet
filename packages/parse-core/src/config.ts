@@ -1,8 +1,10 @@
 /**
  * 内核运行时配置（桌面端注入点）。
  *
- * web 侧不依赖此模块（各解析器仍走 process.env），桌面端在 import parse-core 后
- * 调用 setKernelConfig() 一次即可覆盖所有平台的 cookie/UA/超时/二进制路径。
+ * web 侧不依赖此模块（各解析器仍走 process.env）；桌面端可调用 setKernelConfig() 覆盖。
+ * 读取时机：douyinCookie / kuaishouCookie 在每次解析时读取，注入立即生效；其余字段在
+ * 解析器模块加载时读取（B站 / IG / 小红书 / Twitter fixer / YouTube / yt-dlp），必须在
+ * 首次 import parse-core 前通过环境变量提供，import 之后再注入不会回填。
  */
 
 export interface KernelConfig {
@@ -14,8 +16,8 @@ export interface KernelConfig {
   /** Instagram */
   igCookie?: string;
   igTimeoutMs?: number;
-  /** QQ Music */
-  qqmusicCookie?: string;
+  /** Kuaishou —— 仅作者主页资料（简介 / 获赞 / 权威粉丝数）需要，视频解析本身不用 */
+  kuaishouCookie?: string;
   /** Twitter/X */
   twitterFixerServices?: string;
   /** Xiaohongshu */

@@ -23,8 +23,8 @@ import TruncatedText from "@/components/ui/truncated-text";
  * 站内图片代理（图集展示专用）：hdslb 图床有 Referer 防盗链 —— 实测浏览器带本站
  * Referer 直链加载 i*.hdslb.com 会被 403（text/html 防盗链页），而服务端无 Referer
  * fetch 返回 200。因此图文图集在展示/下载时统一包成 /api/image 代理（同源返回），
- * 原理与后端对头像/封面/小红书/微博图片的处理一致；API 的 data.images 仍保持原图
- * 直链（契约与 fmt=text 直链输出不受影响）。已代理路径幂等返回。
+ * 原理与后端对头像/封面/小红书/微博图片的处理一致；web 接口出参已由后端出口统一包好，
+ * 这里保留幂等 proxify 作为历史缓存/直链入参的兜底。已代理路径幂等返回。
  */
 function proxifyImageUrl(url?: string): string {
   if (!url) return "";
@@ -50,6 +50,9 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
   // 图文动态（/opus/）归一化后 type="image" + images[]，走图集卡片分支
   const isImage =
     parsed?.type === "image" && (parsed?.images?.length ?? 0) > 0;
+  // 纯文字动态（DYNAMIC_TYPE_WORD / 无图动态）归一化后 type="text"，正文在 desc
+  const isText = parsed?.type === "text";
+  const isDynamic = isImage || isText;
   const images = (parsed?.images?.filter(Boolean) as string[]) || [];
   // 图集展示/下载走站内代理（hdslb 防盗链：浏览器直链加载 403），images 直链契约不变
   const displayImages = images.map(proxifyImageUrl);
@@ -263,16 +266,16 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
         </Card>
       )}
 
-      {/* 文案：视频简介 / 图文动态文案，可一键复制 */}
+      {/* 文案：视频简介 / 动态文案（图文与纯文字），可一键复制 */}
       {parsed?.desc && (
-        <CaptionBox text={parsed.desc} title={isImage ? "动态文案" : "视频简介"} />
+        <CaptionBox text={parsed.desc} title={isDynamic ? "动态文案" : "视频简介"} />
       )}
 
-      {/* 信息面板：视频信息 / 图文信息（图文用专用字段集避免「视频标题/视频」错标） */}
+      {/* 信息面板：视频信息 / 图文信息 / 动态信息（动态用专用字段集避免「视频标题/视频」错标） */}
       <ParseInfoPanel
-        platform={isImage ? "bilibiliOpus" : "bilibili"}
+        platform={isDynamic ? "bilibiliOpus" : "bilibili"}
         data={parsed}
-        title={isImage ? "图文信息" : "视频信息"}
+        title={isImage ? "图文信息" : isText ? "动态信息" : "视频信息"}
       />
 
       {/* Download Options：微博同款紧凑布局 —— 每个分P一行（封面 / P序号标题 / 时长），

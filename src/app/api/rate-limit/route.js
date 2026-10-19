@@ -1,4 +1,9 @@
-import { getRateLimitStatus, getClientIP, getCorsHeaders, logger } from "@/lib/api-utils";
+import { logger } from "@/lib/api-utils";
+import {
+  getClientIP,
+  getCorsHeaders,
+  getRateLimitStatus,
+} from "@/lib/server-guard";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";

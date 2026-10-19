@@ -160,12 +160,6 @@ const cases: ShareParseCase[] = [
       "https://music.douyin.com/qishui/share/track?track_id=7031234567890123456",
   },
   {
-    name: "huya-视频页",
-    input: "https://v.huya.com/play/123456789.html",
-    expectPlatform: "huya",
-    expectUrl: "https://v.huya.com/play/123456789.html",
-  },
-  {
     name: "twitter-状态页",
     input: "https://x.com/foo/status/1234567890123456789",
     expectPlatform: "twitter",
@@ -284,19 +278,27 @@ const cases: ShareParseCase[] = [
     expectPlatform: "bilibili",
     expectUrl: "https://b23.tv/abcdefg",
   },
-  // QQ音乐
+  // QQ音乐：已移出视频解析区（歌曲链接归音乐页），首页既不识别也不自动读剪贴板，
+  // 但 URL 提取照常工作——视频页据此给出「请前往音乐解析页」的导向提示。
   {
-    name: "qqmusic-歌曲页链接",
+    name: "无效-qqmusic歌曲页链接（归音乐区）",
     input:
       "分享周杰伦的单曲《晴天》: https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV（来自QQ音乐）",
-    expectPlatform: "qqmusic",
+    expectPlatform: null,
     expectUrl: "https://y.qq.com/n/ryqq/songDetail/0039MnYb0qxYhV",
   },
   {
-    name: "qqmusic-App分享短链",
+    name: "无效-qqmusic App分享短链（归音乐区）",
     input: "我正在听《孤勇者》，推荐给你 https://c6.y.qq.com/base/fcgi-bin/u?__=AbCdEfGh=",
-    expectPlatform: "qqmusic",
+    expectPlatform: null,
     expectUrl: "https://c6.y.qq.com/base/fcgi-bin/u?__=AbCdEfGh=",
+  },
+  // pipix.com 字面以 "x.com" 结尾，靠子串匹配会被误判成 X（Twitter）——域名边界必须参与判定
+  {
+    name: "无效-pipix 链接（下线平台，不被 x.com 子串误判）",
+    input: "看看这个 https://www.pipix.com/w/abc123",
+    expectPlatform: null,
+    expectUrl: "https://www.pipix.com/w/abc123",
   },
 ];
 

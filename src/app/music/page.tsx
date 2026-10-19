@@ -29,7 +29,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: `音乐解析下载 - 多源聚合 - ${siteConfig.name}`,
     description:
-      "统一接入网易云、酷我、JOOX 等聚合音源，按关键词搜索即可获取歌曲试听与下载直链；全民K歌等视频内容请前往视频解析页。",
+      "统一接入网易云、酷我、JOOX 等聚合音源，按关键词搜索即可获取歌曲试听与下载直链；抖音、微博等视频内容请前往视频解析页。",
     url: `${siteConfig.url}/music`,
     siteName: siteConfig.name,
     type: "website",

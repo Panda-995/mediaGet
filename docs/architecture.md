@@ -26,7 +26,7 @@
 
 **统一路由骨架**：平台/功能路由一律 `export const GET = createApiHandler(parseFn[, options])`。`createApiHandler`（`src/lib/api-middleware.ts`）把一个「纯解析函数」包装成完整 HTTP 接口，职责链依次为：
 
-CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（`lib/api-utils.js`）→ 平台级真实抓取节流（`lib/anti-bot.js`，默认 30 次/分/平台）→ URL 校验 + SSRF 白名单 → 解析执行 → `normalizeResult` 归一化统一契约 → 成功结果 5 分钟进程内缓存（`shouldCache`）→ `analytics.recordParse` 行为统计（Turso，可选）→ 统一错误响应；`fmt=text` 也由中间件统一处理。
+CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（`lib/server-guard.ts`）→ 平台级真实抓取节流（`lib/anti-bot.js`，默认 30 次/分/平台）→ URL 校验 + SSRF 白名单 → 解析执行 → `normalizeResult` 归一化统一契约 → 成功结果 5 分钟进程内缓存（`shouldCache`）→ `analytics.recordParse` 行为统计（Turso，可选）→ 统一错误响应；`fmt=text` 也由中间件统一处理。
 
 **不要绕过中间件自造轮子**，新增平台解析器只需返回 `{ code, msg, data }`。
 
@@ -36,7 +36,7 @@ CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（
 
 **平台解析器风格**：多数是 route 内独立 async 函数（短链跟随 → 伪装 UA 抓页面/接口 → 提内嵌 JSON）；快手是类（`lib/kuaishouCore.js`）；TikTok 走 `lib/tiktokDlp.js`（yt-dlp child_process，**仅 Docker/带二进制环境可用**）；YouTube 为纯 HTTP 多源竞速（`lib/youtube.js`）；Instagram（`lib/instagram.js`）已全面登录墙，需 `IG_COOKIE`。
 
-**资源代理**：`/api/video-proxy`（视频流：按平台补 Referer 防盗链、Range/206、`download=1`、twitter CDN 特殊处理；超时/重试）与 `/api/image`（图片字节代理，内存 LRU 6h，小红书/微博/快手图床需带 Referer）。二者入口统一走 `lib/proxy-guard.js`（IP 黑名单 + 限流 + SSRF 白名单，后者带 `PROXY_SSRF_STRICT` 灰度开关）。前端是否走代理由 `utils/videoProxy.ts` 判定。
+**资源代理**：`/api/video-proxy`（视频流：按平台补 Referer 防盗链、Range/206、`download=1`、twitter CDN 特殊处理；超时/重试）与 `/api/image`（图片字节代理，内存 LRU 6h，小红书/微博/快手图床需带 Referer）。**图片字段的出站改写**在 `createApiHandler` 完成 `normalizeResult` 后统一走 `lib/image-proxy.js`：`cover` / `avatar` / `images[]` / `videos[].cover` 一律包成 `/api/image?url=`，`data.url` 按值判断（图片包、视频不包），`/api/parse` 的 `source+id` 直查分支同样挂载；解析内核只出媒体直链，不产出 `/api/*` 路径（桌面端按直链消费）。二者入口统一走 `lib/proxy-guard.js`（IP 黑名单 + 限流 + SSRF 白名单，后者带 `PROXY_SSRF_STRICT` 灰度开关）。前端是否走代理由 `utils/videoProxy.ts` 判定。
 
 **辅助端点**：`/api/health`、`/api/config`（读 `VIDEO_PARSE_ENABLED`）、`/api/stats`（Turso 统计，需 `STATS_API_KEY`）、`/api/rate-limit`、`/api/engines`（平台路由体检）、`/api/_diag`（临时诊断，用完即删）。
 
@@ -61,9 +61,9 @@ CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（
 
 ## 5. 关键 lib 一览（`src/lib/`）
 
-- 解析基础设施：`api-utils.js`（缓存/限流/URL校验/日志/北京时区/取客户端 IP）、`api-middleware.ts`、`normalize-result.ts`、`result-cache.js`、`parse-handler.js`、`unified-parser.js`、`platformRoutes.js`、`platforms.ts`、`share-text.ts`（服务端抽链接，与前端 `utils/share.ts` 行为对齐）、`blockedPlatforms.ts`、`anti-bot.js`、`honeypot.ts`、`analytics.js` + `turso-client.js`、`http.ts`（`TIMEOUT` 常量组 + UA 常量池 + `fetchWithTimeout`）、`lru-cache.ts`（`createTtlCache` 有界 TTL 容器）、`proxy-guard.js`（代理端点统一安防）。
-- 平台解析：抖音（route 内 + `douyin-extract.js` / `douyinFallback.js`）、`kuaishouCore.js`、bilibili（route 内 + `bilibili-opus.js` 图文、`bilibili-cookie-guard.js` 失效告警）、`instagram.js`、`tiktokDlp.js`、`ytDlpClient.js`（备用封装）、`youtube.js`、`qqmusic.js` / `qqmusic-id.js` / `qqmusic-sign.js`，其余小平台解析内联在各 route。
-- 音乐：`gdmusic.js`、`music-link.ts`、`netease-meta.js`；`music-platform-flags.js`（平台双维开关真源 + `MUSIC_BEHAVIOR_DEFAULTS` / `LIMITS` + `lockedPlatformKeys` 终闸）、`music-effective-flags.js`（配置文档校验/规范化 + 两段式求值）、`settings-store.js`（Turso `app_settings` 单表键值存储 + TTL 缓存）、`music-actions/`（`/api/music` 四 action 实现）；`self-search/`（自研直连搜索 + `errors.js` + `retry.js`）。
+- 解析基础设施：`api-utils.js`（**薄壳**，真源 `packages/parse-core/src/lib/api-utils.js`，只留内核通用件：`createTtlCache` / `isValidUrl` / `sanitizeUrl` / `envList` / `logger` / `beijingNow`）、`server-guard.ts`（**web-only 服务端安防**：IP 级限流、取客户端 IP、IP 黑名单蜜罐判定、CORS 头、响应信封 `createResponse`/`errorResponse`/…、`/api/*` 的 5 分钟进程内响应缓存）、`runtime.ts`（**薄壳**，真源 `packages/parse-core/src/runtime.ts`，内核反爬装配点，见 §9）、`api-middleware.ts`、`normalize-result.ts`、`image-proxy.js`（web 出口图片改写：内核直链 → `/api/image` 代理，含 `&fallback=` 折叠）、`result-cache.js`、`parse-handler.js`、`unified-parser.js`、`platformRoutes.js`、`platforms.ts`、`share-text.ts`（服务端抽链接，与前端 `utils/share.ts` 行为对齐）、`blockedPlatforms.ts`、`anti-bot.js`、`honeypot.ts`、`analytics.js` + `turso-client.js`、`http.ts`（`TIMEOUT` 常量组 + UA 常量池 + `fetchWithTimeout`）、`proxy-guard.js`（代理端点统一安防）。
+- 平台解析：抖音（route 内 + `douyin-extract.js` / `douyinFallback.js`）、`kuaishouCore.js`、bilibili（route 内 + `bilibili-opus.js` 图文、`bilibili-cookie-guard.js` 失效告警）、`instagram.js`、`tiktokDlp.js`、`ytDlpClient.js`（备用封装）、`youtube.js`，其余小平台解析内联在各 route。
+- 音乐：`gdmusic.js`、`music-link.ts`、`netease-meta.js`、`qqmusic.js`（QQ 单曲元数据纯逻辑，`/api/music/resolve` 专用——QQ音乐 不在视频解析核心内）、`qqmusic-sign.js`（zzc 签名，自研搜索腾讯源用）；`music-platform-flags.js`（平台双维开关真源 + `MUSIC_BEHAVIOR_DEFAULTS` / `LIMITS` + `lockedPlatformKeys` 终闸）、`music-effective-flags.js`（配置文档校验/规范化 + 两段式求值）、`settings-store.js`（Turso `app_settings` 单表键值存储 + TTL 缓存）、`music-actions/`（`/api/music` 四 action 实现）；`self-search/`（自研直连搜索 + `errors.js` + `retry.js`）。
 - 前端工具：`utils/share.ts`、`utils/videoProxy.ts`、`utils/downloadImages.ts`、`utils/filename.ts`、`format.ts`（`formatCount` / `formatCountLoose`）、`dom.ts`（`scrollToElement`）。
 - **类型与依赖方向**：`src/lib/**` 不得 import `src/components/**`；音乐类型在 `src/types/music.ts`，解析契约在 `src/types/api.ts`。
 
@@ -104,4 +104,35 @@ CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（
 - `src/index.ts` 的 exports 白名单是唯一对外契约；web 侧薄壳 re-export 和桌面端 import 都只认这份清单。
 - 每次改 `src/**` 后若未升 version，CI 的 release workflow 会拒绝打 tag（tag version ≠ package.json version）。
 - 桌面端 About 页通过 `PARSE_CORE_VERSION` 展示当前内核版本，便于追踪上游更新。
+- 包内的使用方式、平台矩阵、配置/运行时注入、接入新平台与开发规范，统一写在 `packages/parse-core/README.md`，不在本文件重复。
+
+## 9. parse-core 反爬运行时（`packages/parse-core/src/runtime.ts`）
+
+反爬三件套——`lib/http`（超时层 + UA 池）、`lib/anti-bot`（滑动窗口节流 + 风控分类 + `sleep`）、`lib/api-utils`（日志 + 有界 TTL 容器）——是内核自带能力，不是 web 的私有件。**`runtime.ts` 是它们在包内的唯一装配点**：内核的上游请求一律经 `guardedFetch` 发出，下游 `setRuntime({ fetch, limiter, cache, logger })` 就能整套换掉实现，不必动任何解析器代码。这一层是 §8 意义上的 minor 新增 API（v0.3.0）。
+
+**关注点三分（改 web 行为前先对号）**：
+
+| 归属 | 内容 | 真源 |
+| --- | --- | --- |
+| 内核必需 | `TIMEOUT`/UA 常量池/`fetchWithTimeout`/`RequestTimeoutError`；`createSlidingWindowLimiter`/`platformFetchLimiter`/`classifyRisk`/`RISK_TYPES`/`sleep`；`createTtlCache`/`isValidUrl`/`sanitizeUrl`/`envList`/`logger`/`beijingNow` | `packages/parse-core/src/lib/{http,anti-bot,api-utils,logger}.ts` |
+| web-only 服务件 | IP 级限流与取客户端 IP、IP 黑名单蜜罐判定、CORS 头、HTTP 响应信封、`/api/*` 的 5 分钟进程内响应缓存 | `src/lib/server-guard.ts`（**不是壳，包外真源**） |
+| 全局单例 | 两个 `globalThis` 状态 key（限流表、响应缓存） | 随 web-only 一起移出包，内核 `sideEffects: false` 才成立 |
+
+移出 web-only 的动因：包内不得有 **import-time `process.env`**（会被固化进 bundle 产物）和携带状态的 `globalThis` 单例——这两条都会破坏「同一份内核代码在 web / 桌面 / CLI 三处行为一致」。内核侧唯一的 env 读取是 `logger` 的 dev 判定，已改为惰性求值。
+
+**四个注入端口**（`setRuntime` 部分覆盖，未给的字段保持默认；非法形状立即 `throw TypeError`，不留到第一次上游请求才炸）：
+- `fetch`：签名与 `fetchWithTimeout` 一致（含 `timeoutMs`），默认用它——下游换成自己的网络栈即可复用代理、mTLS 等。
+- `limiter`：`{ take(key), reset() }`，默认 `platformFetchLimiter` 实例（web 与内核**共用同一份计数**）。
+- `cache`：`{ get, set, delete, size }`，默认 **`null` = 内核不缓存**。注入后 `unifiedParseLocal` 自动获得「同链接命中即返回」，写回前跳过 `embedOnly` 降级结果（不缓存无直链的半成品）。
+- `logger`：四级门面，默认 dev-gated `console`。`src/lib/logger.ts` 是**代理式**转发（每次调用现取 `getRuntime().logger`），所以注入对包内 16 处既有 `import { logger } from "./api-utils"` 的解析器与工具一并生效。
+
+**`guardedFetch(url, options)` 的防线顺序**：取节流配额（超限抛 `UpstreamThrottledError`，带 `.platform`，调用方据此直接 429 而不必再试别的源）→ 超时层 → 风控判定（401/403/429 直接判风险；`riskScanChars > 0` 时 `clone()` 后取前 N 字符交 `classifyRisk`，带 Cookie 时能区分 `cookie_stale`）→ 仅对 `rate_limited`/`ip_risked`/`cookie_stale` 按 `backoffMs * 2^attempt` 退避重试。**未命中风控、或重试次数用尽时原样返回响应（包括 403）**，各平台已有的专属风控检测与报错文案不受影响。两条刻意约束：
+- **配额只在显式传 `platform` 时消耗**——内核绝不替 route 中间件重复计数（web 的节流点仍是 `api-middleware.ts` 的「缓存未命中、即将真实抓取」分支，现网限流行为一字未变）。
+- **DoH 查询与指定 IP 直连不走运行时**（`douyinCore.js` 的 `resolveHostViaDoh` / `httpsGetViaIp`，走 `node:https`）：它们的存在意义就是绕开常规网络栈，接管即失效。
+
+**接入进度（灰度中，别误读成「内核已自动重试」）**：`retries`/`riskScanChars` 机制已入内核并有单测，但**尚未接入任何真实解析器**（默认 `retries = 0` = 与直接 `fetch` 等价）。已接管的是三条重试/兜底路径共 10 个调用点——`douyinCore.js` 4 处上游（分享页 / 用户主页 SSR / 老接口 / 短链跟随）、`douyinFallback.js` 5 处第三方兜底后端（17change×2、douyin.wtf、yujn、tenapi）、`verifyUrl.js` 的直链有效性探测。包内其余上游请求点尚未接管，按平台灰度迁移，不做一次性全量替换：10 处仍是 `fetch(..., { signal: AbortSignal.timeout(...) })` 裸调用（`douyinCore.js` 1、`instagram.js` 1、`kuaishouCore.js` 3、`weiboCore.js` 3、`xhsCore.js` 2），另有 9 处直接调 `fetchWithTimeout`——只吃到超时层，没有配额、风控判定与退避。快手那 3 处里有一处是作者资料请求（桌面 `profile/<eid>` 页，靠登录态才 SSR 出简介与获赞），仅在配置了 `KUAISHOU_COOKIE` 时才发出，未配置零网络开销，且 cookie 只发第一方域名（口径见 `API.md`「环境变量配置」）。
+
+**超时口径差异（迁移点必读）**：`AbortSignal.timeout()` 掐的是**包括 body 流**的整体耗时；`fetchWithTimeout` 的计时器在响应头到达（fetch resolve）时即清除，**body 读取不再被限时打断**。迁移到 `guardedFetch` 的调用点因此与包内其余调用点同口径——好处是慢 body 不再被误杀，代价是卡死的响应体不再有自动兜底。`verifyUrl.js` 用 `HEAD`（无 body），语义完全一致。
+
+守卫：`tests/kernel-runtime.test.ts`（注入生效、配额不重复计数、退避重试、cache 命中）；`tests/parse-core-shells.test.ts` 守薄壳与导出面快照。消费面速查见 `packages/parse-core/src/index.ts` 头部注释，HTTP 侧限流/缓存口径见 `API.md`「限制说明」。
 

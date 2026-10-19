@@ -35,16 +35,25 @@
 | `url` | string | 主媒体直链（视频/音乐/单图） |
 | `audioUrl` | string | 音频直链（背景音乐/原声） |
 | `images` | string[] | 图集（图文内容） |
-| `type` | string | 内容类型：`video` / `image` |
-| `duration` | number | 视频时长（毫秒） |
-| `videos` | array | 多分P/多清晰度列表（bilibili） |
+| `type` | string | 内容类型：`video` / `image` / `music` / `text` |
+| `duration` | number | 时长（**毫秒，全平台统一口径**，含 B站分P） |
+| `videos` | array | 多分P/多清晰度列表（B站、微博多P、X 多视频等） |
+| `qualities` | array | 可下载清晰度档位 `{quality,label,url}`；单视频挂顶层，多P挂 `videos[]`；**不足 2 档不下发** |
 | `name` / `lyrics` / `core` / `copyright` | string | 音乐类扩展字段（汽水音乐） |
 
 > 兼容说明：归一化**保留**各平台原始字段（如快手的 `photoUrl`、`caption` 等），同时新增上述统一字段，外部旧调用方不受影响。
+> 两处例外：解析器普遍写的 `""` / `null` 空占位会被**删键**（下游 `if (data.cover)` 与 `'cover' in data` 同结论）；
+> 数字型 id（如 B站 `owner.mid`）一律收成 string，收不拢的计数写法（小红书 `"1.2万"`）原样保留。
+>
+> `time`（发布时间）**口径不统一**，按平台原样透传：抖音/小红书/B站为 unix 秒，X/Instagram/YouTube 为毫秒时间戳，微博为可 `new Date()` 解析的日期串——消费方需三选一兼容处理。
+>
+> **清晰度档位 `qualities`**：单视频挂 `data.qualities`，多P/多分P 挂 `videos[].qualities`（顶层不写整体档位）。`quality` 为平台档位值（B站 qn；其余平台为高度 px，缺失时退码率），`label` 仅展示，`url` 为该档直链。**不足 2 档不下发**，单档仍由 `qualityLabel` 徽标展示。当前产出平台：B站、微博、快手、小红书、抖音、X、Instagram、TikTok；同档多编码先归并（快手优先 avc，X 取高码率），URL 重复项丢弃。
 >
 > 历史变更：此前 bilibili 成功返回 `code: 1`、字段散落在顶层（`title`/`imgurl`/`user`）且 `data` 为分P数组——现已统一为 `code: 200` + 顶层字段移入 `data` + 分P 列表放入 `data.videos`。
 >
 > 补充：bilibili 归一化后 `data.url` 已补齐为第一分P直链，统一契约下消费方无需再取 `data.videos[0].url`。
+>
+> **图片出参形态（web 出口）**：`cover` / `avatar` / `images[]` / `videos[].cover` 由 web 出口统一改写成站内 `/api/image?url=…` 同源代理；`data.url` 只按值判断——图文帖的图片直链包，视频/音频直链一律不代理。改写挂在 `createApiHandler` 的 `normalizeResult` 之后（`src/lib/image-proxy.js`），`/api/parse` 的 `source+id` 直查分支同样挂载，所以所有 web 接口出参形态一致。**解析内核（`packages/parse-core`，桌面端同源）只出媒体直链，不产出任何 `/api/*` 路径**，桌面端按直链自行取流。多 CDN 备选（`coverUrlFallbacks` / `authorAvatarFallbacks`）是内核→出口的内部键，出口折叠进 `&fallback=` 后删除，不对外透出。
 
 ### 纯文本模式（fmt=text）
 
@@ -159,23 +168,19 @@ Content-Type: application/json
 | `/api/weibo` | 微博 | 见 §4（自动游客模式） |
 | `/api/xhs` | 小红书 | 见 §5（视频 / 图文） |
 | `/api/qsmusic` | 汽水音乐 | 见 §6（音乐类，返回音频直链） |
-| `/api/pipigx` | 皮皮搞笑 | 见 §7 |
-| `/api/ppxia` | 皮皮虾 | 见 §8 |
 | `/api/xigua` | 西瓜视频 | — |
 | `/api/zuiyou` | 最右 | — |
-| `/api/huya` | 虎牙 | — |
 | `/api/acfun` | AcFun | — |
-| `/api/quanminkge` | 全民K歌 | 音乐类，返回音频直链 |
-| `/api/sixroom` | 六间房 | — |
-| `/api/xinpianchang` | 新片场 | — |
-| `/api/haokan` | 好看视频 | — |
-| `/api/qqmusic` | QQ音乐 | 音乐类，返回音频直链 |
 | `/api/tiktok` | TikTok | 依赖 yt-dlp（child_process），仅 Docker / Node 环境可用 |
 | `/api/twitter` | X（Twitter） | — |
 | `/api/instagram` | Instagram | 2024+ 匿名请求被登录墙拦截，建议配 `IG_COOKIE` |
 | `/api/youtube` | YouTube | 多源 HTTP 解析；源不可用时降级官方嵌入播放（`embedOnly`，无直链） |
 
-> 平台 key 与目录名不完全一致：小红书 key=`redbook`（目录 `/api/xhs`）、皮皮虾 key=`pipixia`（目录 `/api/ppxia`）；统一入口为推荐入口，专用直连接口仅供既有调用方使用。
+> 平台 key 与目录名不完全一致：小红书 key=`redbook`（目录 `/api/xhs`）；统一入口为推荐入口，专用直连接口仅供既有调用方使用。
+>
+> **明确不做**：皮皮搞笑、皮皮虾、虎牙、全民K歌、六间房、新片场、好看视频 已停止支持，粘贴这些链接统一回「无法识别的视频平台」。本文其后小节编号（§9 起）保持不变，以免打散既有引用。
+>
+> **QQ音乐 换区不做**：它不在视频解析核心内，歌曲链接一律走音乐区 `/api/music/resolve`（见 §12.5）；首页粘贴 QQ音乐 链接会得到「请前往音乐解析页」的导向提示。
 
 ---
 
@@ -236,7 +241,7 @@ GET /api/douyin?url=https://v.douyin.com/kB9dI20w7vk/
 - `https://b23.tv/xxx`
 - `https://www.bilibili.com/video/BVxxx`
 - `https://m.bilibili.com/video/BVxxx`
-- `https://www.bilibili.com/opus/<id>` / `https://m.bilibili.com/opus/<id>`（图文动态，返回 `type: "image"` + `images[]`；专栏文章等非纯图文会返回错误提示）
+- `https://www.bilibili.com/opus/<id>` / `https://m.bilibili.com/opus/<id>`（动态：图文返回 `type: "image"` + `images[]`；纯文字返回 `type: "text"`，正文在 `desc`；专栏文章等仍返回错误提示）
 
 **示例请求**:
 ```
@@ -259,7 +264,7 @@ GET /api/bilibili?url=https://b23.tv/abcDEFg
       {
         "title": "P1",
         "url": "视频播放地址",
-        "duration": 180,
+        "duration": 180000,
         "durationFormat": "00:02:59",
         "accept": ["高清 1080P+", "高清 720P"]
       }
@@ -272,7 +277,11 @@ GET /api/bilibili?url=https://b23.tv/abcDEFg
 
 **图文动态响应补充**：图文动态为纯图片内容，无 `videos`/`url`；图片直链在 `data.images`（原图，已统一 https），`data.cover` 为首图，`data.desc` 为动态文案，`data.type` 为 `"image"`。前端展示为图集卡片并支持一键下载全部图片。
 
+**纯文字动态响应补充**：`DYNAMIC_TYPE_WORD` 及无图动态返回 `data.type = "text"`，正文在 `data.desc`，无 `cover`/`images`/`url`/`videos`；作者信息（`author`/`authorId`/`avatar`/`time`/`stat`）与图文一致。前端以「动态文案」展示正文、「动态信息」展示元数据。`fmt=text` 时由 `desc` 兜底输出正文。
+
 > 注：图文动态解析内部使用现代浏览器 User-Agent 访问 detail 接口——旧 UA 会被 B 站风控拦截（`-352`），该实现细节与接口可用性相关，调用方无需自行处理。
+>
+> 收藏数：常规 detail 接口不返回 `favorite`，解析器会并行补调 opus 页面同源的 `x/polymer/web-dynamic/v1/opus/detail`，把 `module_stat.favorite.count` 归一到 `data.stat.favorite`（与 `like`/`reply`/`share` 同层）。补充请求失败或计数为 0 时该字段缺失，前端「收藏」行自动隐藏，不影响主解析结果。
 
 ---
 
@@ -286,9 +295,13 @@ GET /api/bilibili?url=https://b23.tv/abcDEFg
 | url | string | 是 | 快手视频链接 |
 
 **支持的链接格式**:
-- `https://v.kuaishou.com/xxx`
+- `https://v.kuaishou.com/xxx`（App 分享短链）
+- `https://www.kuaishou.com/f/xxx`（网页分享码）
 - `https://www.kuaishou.com/short-video/xxx`
 - `https://www.kuaishou.com/photo/xxx`
+- `https://chenzhongtech.com/fw/photo/xxx`、`https://m.gifshow.com/fw/photo/xxx`（H5 取数页，可直接粘）
+
+> 取数一律走快手 H5 分享页：先跟随一次重定向拿到 photoId，再用 `fw/photo/<photoId>` 抓页面（桌面 `short-video` 页在未登录时只是空壳，不提供直链）；主端点被风控时自动换 `m.gifshow.com` 镜像，仍失败则走 17change 公共 API 兜底。
 
 **示例请求**:
 ```
@@ -312,6 +325,12 @@ GET /api/kuaishou?url=https://v.kuaishou.com/abcdEF
 
 > 注：已统一为 `url` / `title` / `cover` / `author` 字段契约（原始 `photoUrl` / `caption` / `coverUrl` / `authorName` 字段仍保留）。
 
+> 封面与计数：`cover` 取 H5 `coverUrls` 的首节点，同资源其余 CDN 节点以原始键 `coverUrlFallbacks` 一并下发（出口层把它们拼进站内图片代理的 `fallback`，主节点解析失败时按序重试，该内部键不对外透出）。互动计数 `viewCount` / `likeCount` / `commentCount` / `shareCount` 来自 H5 `photo` 对象，`forwardCount` 实测恒为 0。作品收藏数 `collectionCount` 来自**同一响应的顶层 `counts`**：那个 `counts` 是混合对象，`fanCount` / `followCount` / `photoCount` 跟作者走（落成 `followerCount` / `followingCount` / `worksCount`），`collectionCount` 跟**作品**走，按原始键透出。它匿名即可取得，与带 `__NS_hxfalcon` 签名的 `www.kuaishou.com/rest/v/feed/hot` 里作品级 `collectCount` 实测同值（同一 photoId 两边 15883 / 15889，只差计数自然增长），服务端既不需要 cookie 也不需要复现签名。反过来 graphql `visionVideoDetail` 的 photo 类型确实没有收藏字段（`collectCount` / `collectedCount` / `favoriteCount` 一律 `Cannot query field`），别拿它当「收藏数无源」的依据。
+
+> 图片出参形态见「统一响应模型 · 图片出参形态」。快手特有的部分是封面多 CDN 备选 `coverUrlFallbacks`（出口折叠进 `&fallback=` 后删除，主节点解析失败时按序重试）。代理**不是万能钥匙**：2026-10-18 实测快手媒体边缘整体回源故障期间，`*.a.yximgs.com` / `*.a.kwimgs.com` 上的图片与视频一律 `400`（`X-Swift-Error: orig response 4XX error`，四种 Referer 与全套浏览器请求头都改不了，同页静态资源域名照常 `200`），此时裸直链与 `/api/image` 一起失败，代理只是把故障如实透成 `502`。
+
+> 作者信息：`authorId`（数字 ID）、`avatar`、`authorUrl`（由 `userEid` 拼的主页链接）、`uid`（快手号，原始键并存）与 `followerCount` / `followingCount` / `worksCount`（粉丝 / 关注 / 作品数）匿名即可获取，全部来自 H5 分享页缓存；`uid` 只在原声作者即视频作者时才返回，避免二创视频把他人账号串进来。**简介 `sign` 与获赞 `totalFavorited` 需要登录态**：配了 `KUAISHOU_COOKIE` 才多发一次作者主页请求补全，并顺带用主页的权威值覆盖 `uid` / 粉丝 / 关注 / 作品数（见「环境变量配置」）。未配置、cookie 失效、或主页里认不出这位作者时整体降级，匿名结果原样透出。
+
 ---
 
 ### 4. 微博视频解析
@@ -324,29 +343,78 @@ GET /api/kuaishou?url=https://v.kuaishou.com/abcdEF
 | url | string | 是 | 微博视频链接 |
 
 **支持的链接格式**:
-- `https://weibo.com/tv/show/xxx`
-- `https://video.weibo.com/show?fid=xxx`
+- `https://weibo.com/tv/show/1034:4912345678901234`、`https://video.weibo.com/show?fid=1034:...`（fid 形态）
+- `https://weibo.com/{uid}/{mid}`（字符型 bid，如 `https://weibo.com/2209225647/Rn4lmzVM9`；内核按 base62 转数字 mid）
+- 16 位数字 mid
 
-**示例请求**:
-```
-GET /api/weibo?url=https://weibo.com/tv/show/1034:4912345678901234
-```
+**通道链**（2026-10-18 实测，代码见 `packages/parse-core/src/lib/weiboCore.js`）：
 
-**响应示例**:
+1. 访客 Cookie 两段式 `genvisitor` → `a=incarnate`，模块级缓存 25 分钟，不需要配置 `WEIBO_COOKIE`；
+2. 链接是 fid（`1034:xxx`）时先 `POST weibo.com/tv/api/component` 换成真实 mid——两个详情接口都不认 fid（桌面回 400）；
+3. **作品主通道** `GET weibo.com/ajax/statuses/show?id={bid|mid}&locale=zh-CN&isGetLongText=true`；
+4. **作者主通道** `GET weibo.com/ajax/profile/info?uid={authorId}&scene=profile`；
+5. 第 3 步失败 → 降级 `GET m.weibo.cn/statuses/show?id={mid}`；
+6. 再失败 → 降级 `tv/api/component`（只回 title/cover/author/avatar/time，无 uid，故作者字段整块按无源不写）。
+
+换桌面当主通道的原因（同一条作品两通道对拍）：视频清晰度手机封顶 720p，1080p 只出现在桌面
+`media_info.playback_list`；图集手机只给 `/mw2000/`（实测 860KB），桌面 `pic_infos` 给全档位表，
+`largest` 是 `/large/`（实测 3.7MB）；`region_name`（IP 属地）也是桌面独有。
+
+**响应示例**（单P 视频帖）:
 ```json
 {
   "code": 200,
   "msg": "解析成功",
   "data": {
-    "author": "作者名称",
-    "avatar": "头像URL",
-    "time": "发布时间",
-    "title": "视频标题",
-    "cover": "封面URL",
-    "url": "视频播放地址"
+    "title": "正文前 120 字",
+    "desc": "去标签后的完整正文",
+    "author": "半岛hooker",
+    "authorId": "2209225647",
+    "authorUrl": "https://weibo.com/u/2209225647",
+    "avatar": "/api/image?url=https%3A%2F%2Ftva4.sinaimg.cn%2Fcrop...jpg",
+    "sign": "博主简介",
+    "followingCount": 12,
+    "followerCount": 1298045,
+    "totalFavorited": 35091109,
+    "verifiedReason": "音乐博主",
+    "statusesCount": 5678,
+    "time": "Wed Oct 15 20:30:00 +0800 2026",
+    "like": 14370, "reply": 1420, "share": 2649,
+    "ipRegion": "北京",
+    "cover": "/api/image?url=...",
+    "url": "https://f.video.weibocdn.com/o0/....mp4?label=mp4_1080p",
+    "duration": 13000,
+    "qualityLabel": "1080p",
+    "type": "video"
   }
 }
 ```
+
+**字段来源**：
+
+| 字段 | 作品接口 show | 作者接口 profile/info | 手机通道 |
+|------|---------------|----------------------|----------|
+| title / desc / time / like / reply / share / cover / url / images / videos | ✅ | — | ✅ |
+| qualityLabel / qualities（单P 顶层，多P 落 `videos[]`；qualities 为 playback_list 全档位）、duration（毫秒，同上） | ✅ 1080p | — | 封顶 720p 且无文案 |
+| ipRegion | ✅ | — | — |
+| totalFavorited | ✅ 内嵌 `user.status_total_counter` | ✅ | — |
+| sign / followingCount / followerCount | — | ✅ 精确整数 | ✅ 粉丝是四舍五入串 |
+| verifiedReason / statusesCount | — | ✅ | — |
+
+口径与取值坑（都有对应单测，见 `tests/weibo-route.test.ts`）：
+
+- **获赞只认 `like_cnt`**：同对象的 `total_cnt` = 赞 + 评论 + 转发（实测 40,479,439 = 35,091,109 + 3,649,904 + 1,738,426），是互动总数不是获赞；且它是**作者**聚合数，本条作品的点赞是 `attitudes_count`。千分位字符串由内核收成 number。
+- **视频取 `playback_list` 最高档**：`media_info` 的平铺字段（`mp4_hd_url` / `stream_url_hd` / `mp4_720p_mp4` / `h265_*` / `inch_*`）实测全指向同一个 720p 文件；表里还混有 `meta.type=3` 的 `scrubber_hd` 进度条预览图（指向 jpg），只按 `quality_index` 排序不滤 type 就会把 jpg 当视频。清晰度文案用 `quality_label`，`quality_desc` 对 1080p 与 720p 都写「高清」，不可区分。
+- **`media_info.author_name` 是素材作者**（实测一条央视新闻投稿 ≠ 博文作者），不得覆盖 `author`。
+- **图集按 `pic_ids` 保序**，逐张从 `pic_infos` 取档位：`largest` 最大而 `original` 反而小，字段名与体积无关；livephoto 的动态直链在 `pic_infos[pid].video`，其静态帧兼作封面后不再进图集（手机侧对应 `pics[].videoSrc`）。
+- **混排帖（视频 + 图片）的媒体在 `mix_media_info.items`**：顶层没有 `page_info` / `pics`，`pic_ids` 只列图片项。视频项 `data` 是 `page_info` 形态（`media_info` + `page_pic`），图片项 `data` 是 `pic_infos` 档位表形态；两类都要读，结果仍为 `type: "video"` 且 `images[]` 并存。只读 `page_info` / `pic_ids` 会把视频丢掉、整帖误判成图集。
+- **粉丝数取作者接口的精确整数**：手机通道返回 `"129.8万"`，收成 number 得到假精确 1298000（真值 1298045）。
+- **作者接口失败态是 HTTP 200 + 业务错误体**（`{"error_type":"link","url":".../sorry?usernotexists"}`、`{"user":{},"message":"用户不存在","abnormal":true}`），不能按状态码判；只认 `data.user` 里有 `screen_name` 或 `idstr`。
+- **两道同人校验**：作者卡片 uid 与 `data.authorId` 不一致（转发场景）整体不合并；作者接口不可用时退化到手机通道的内嵌 user 只回补 `sign` / `followingCount` / `followerCount` 三项。
+- **新浪图床签名要剥**：`?KID=imgbed,tva&Expires=…&ssig=…` 进出口是一条会过期的死链，同一路径去 query 后仍 200 且字节相同（回源需带 `Referer: weibo.com`，由 `/api/image` 负责）。只处理 sinaimg / weibocdn 域名，livephoto 的 `video.weibo.com/show?livephoto=…` 查询串是资源本体。
+- **`duration` 毫秒**：两个详情接口原字段都是秒，内核各自换算；`time` 保持平台原样（可 `new Date()` 解析的日期串，见 §出口口径）。
+- 手机 `page_pic` 是 `{url,width,height}` 对象、桌面是裸字符串，两种形态都吃。
+
 
 ---
 
@@ -419,28 +487,6 @@ GET /api/xhs?url=https://www.xiaohongshu.com/explore/66f8f8f8f8f8f8f8f8f8f8f8
 ```
 GET /api/qsmusic?url=https://music.douyin.com/qishui/share/track?track_id=xxx
 ```
-
----
-
-### 7. 皮皮搞笑视频解析
-
-**接口**: `GET /api/pipigx`
-
-**参数**:
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| url | string | 是 | 皮皮搞笑视频链接 |
-
----
-
-### 8. 皮皮虾视频解析
-
-**接口**: `GET /api/ppxia`
-
-**参数**:
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| url | string | 是 | 皮皮虾视频链接 |
 
 ---
 
@@ -886,6 +932,8 @@ POST /api/music/cache
 - **IP 级**：每个 IP 每分钟最多 **60** 次请求（单次解析会触发多次上游请求，故阈值较高），超出返回 `429`（msg 为「请求过于频繁」）
 - **平台级（上游抓取保护）**：每个平台每分钟最多 **30** 次「真实抓取」——只统计缓存未命中的解析，缓存命中不消耗配额；同一链接的并发请求共享一次配额。超出返回 `429`（msg 为「该平台解析请求较多」）。目的：把对目标平台（抖音/快手/B 站等）的请求频率压在不触发其风控的区间，保护服务出口 IP
 
+该节只描述本站 HTTP 接口对外的限流表现；同一套节流器/超时层/风控分类作为解析内核能力如何实现与注入，见 `docs/architecture.md` §9（唯一说明处）。
+
 ### 缓存机制
 - **统一入口 `/api/parse`**：成功解析的结果缓存 **24 小时**（Cloudflare Cache API，跨实例共享），好友/他人再打开同一分享链接时直接返回缓存结果，不再全量重新解析；命中时服务端会先探测主直链，明确死链（404/410，如抖音签名直链过期）自动重新解析并回写，避免拿到过期直链打不开
 - **平台专用接口**（`/api/douyin` 等）：进程内存缓存 **5 分钟**（单实例内有效）
@@ -917,15 +965,23 @@ BILIBILI_USER_AGENT=your_user_agent
 
 # 微博：自动游客模式，无需配置 Cookie（WEIBO_COOKIE 已废弃，勿再配置）
 
+# 快手（可选）：视频解析本身不需要 Cookie。只有「作者主页资料」要登录态——简介（sign）与
+# 获赞（totalFavorited）只在桌面 profile 页的 SSR 预取里，游客态该缓存项整体缺席
+# （www 的 rest/v/profile/user、graphql visionProfile、H5 镜像 profile 路径实测一律被挡，
+# 真浏览器打开主页也只渲染「想看更多视频，快去登录吧」）。
+# 配置后每次解析成功后多发一次 https://www.kuaishou.com/profile/<作者eid> 请求：补 sign /
+# totalFavorited，并用主页权威值覆盖 uid / 粉丝 / 关注 / 作品数；Cookie 只发这一条第一方
+# 地址，H5 取数镜像与第三方兜底后端一律不带。未配置零额外请求；cookie 失效或主页里认不出
+# 该作者（资料对象的 user_id 与请求的 eid 不符）时整体降级，匿名结果原样透出，视频解析出口不受影响。
+# 获取：浏览器登录 kuaishou.com → F12 → Application → Cookies → 复制全部。
+# KUAISHOU_COOKIE=your_cookie
+
 # 小红书（可选）：数据中心 / 海外出口被风控时，配置登录 Cookie 可稳定解析
 # XHS_COOKIE=your_cookie
 
 # Instagram（可选但强烈建议）：匿名请求已全面登录墙，需配置登录态 Cookie 才可稳定解析
 # IG_COOKIE=your_cookie
 # IG_TIMEOUT_MS=20000
-
-# QQ音乐 source+id 解析（可选）：登录 Cookie 可降低 vkey 试听接口风控
-# QQMUSIC_COOKIE=your_cookie
 
 # X/Twitter 解析（可选）：逗号分隔的 fxTwitter / fixupx / vxtwitter 等 fixer 服务，覆盖默认集
 # TWITTER_FIXER_SERVICES=https://api.fxtwitter.com,...
@@ -997,8 +1053,6 @@ STATS_API_KEY=your_stats_key
 # 功能开关：视频解析入口（/api/config 读取；仅值为 "true" 时放开，未配置默认关闭）
 # VIDEO_PARSE_ENABLED=true
 ```
-
-> Cloudflare Workers 部署时：`BILIBILI_USER_AGENT` 已写入 `wrangler.toml` 的 `[vars]`；Cookie 类敏感值在 CI 中由 GitHub Secrets 自动 `wrangler secret put` 注入，无需手动配置。
 
 ---
 

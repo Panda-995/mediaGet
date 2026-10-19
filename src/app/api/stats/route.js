@@ -1,5 +1,5 @@
 import { queryStats } from "@/lib/analytics";
-import { getCorsHeaders } from "@/lib/api-utils";
+import { getCorsHeaders } from "@/lib/server-guard";
 
 export const runtime = "nodejs";
 

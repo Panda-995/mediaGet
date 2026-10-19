@@ -4,7 +4,7 @@
 import { TIMEOUT, UA_CHROME_WIN126, fetchWithTimeout } from "./http";
 import { logger } from "./api-utils";
 import crypto from "crypto";
-import { classifyOpusDetail } from "./bilibili-opus";
+import { classifyOpusDetail, extractOpusFavorite } from "./bilibili-opus";
 import {
   classifyBiliFailure,
   createBiliCookieGuard,
@@ -100,11 +100,11 @@ function cleanUrlParameters(url) {
 }
 
 // B站 API 返回的图片地址（头像 face / 封面 pic）协议不稳定，部分为 http:// 开头，
-// 在 https 页面直链会被浏览器「混合内容」拦截导致破图。
-// 统一包成站内 /api/image 代理（同源 https 返回，且可兜底图床防盗链），与小红书处理一致。
-function proxifyImage(url) {
+// 在 https 页面直链会被浏览器「混合内容」拦截导致破图。这里只做数据层的 https 升级；
+// 要不要再包成站内图片代理是宿主出口的事，内核不认站点路由（与小红书/微博口径一致）。
+function toHttps(url) {
   if (!url) return "";
-  return `/api/image?url=${encodeURIComponent(url)}`;
+  return String(url).replace(/^http:\/\//i, "https://");
 }
 
 // B站部分无简介视频的 desc 为 "-"（单个连字符）或纯空白，
@@ -394,7 +394,7 @@ export async function bilibiliParse(url) {
           .toISOString()
           .substr(11, 8),
         // 分P封面：B站分P 封面可能为空，回退到视频总封面
-        pic: page.pic ? proxifyImage(page.pic) : proxifyImage(videoInfo.data.pic),
+        pic: page.pic ? toHttps(page.pic) : toHttps(videoInfo.data.pic),
         accept: playUrl.data.accept_description,
         video_url,
         qualities,
@@ -420,7 +420,7 @@ export async function bilibiliParse(url) {
       code: 1,
       msg: "解析成功！",
       title: videoInfo.data.title,
-      imgurl: proxifyImage(videoInfo.data.pic),
+      imgurl: toHttps(videoInfo.data.pic),
       desc: normalizeDesc(videoInfo.data.desc),
       // 元数据：发布时间(unix秒) / 总时长(毫秒) / 分区 / 版权(1自制2转载) / 互动统计 / UID
       pubdate: videoInfo.data.pubdate,
@@ -431,7 +431,7 @@ export async function bilibiliParse(url) {
       data: bilijson,
       user: {
         name: videoInfo.data.owner.name,
-        user_img: proxifyImage(videoInfo.data.owner.face),
+        user_img: toHttps(videoInfo.data.owner.face),
         sign: upStats.sign || videoInfo.data.owner.sign || "",
         uid: videoInfo.data.owner.mid,
         // UP主主页链接：由 mid 拼 space 首页（前端可点击跳转）
@@ -515,6 +515,19 @@ async function fetchBilibiliUpStats(mid) {
 }
 
 /**
+ * 收藏数补充通道：常规 detail 接口不含 favorite（实测各 features 组合均无），
+ * opus 页面同源的 opus/detail 以 modules 数组返回 module_stat.favorite.count。
+ * 单次轻量 JSON 请求；失败/无该字段时返回 undefined（前端收藏行自动隐藏）。
+ */
+async function fetchBilibiliOpusFavorite(opusId, headers) {
+  const payload = await bilibiliRequest(
+    `https://api.bilibili.com/x/polymer/web-dynamic/v1/opus/detail?id=${opusId}`,
+    { ...headers, Referer: `https://www.bilibili.com/opus/${opusId}` }
+  );
+  return extractOpusFavorite(payload);
+}
+
+/**
  * 图文动态（/opus/<id>）解析：detail 接口无 cookie 即可访问（带上 buvid 通行证更稳）。
  * 纯图文返回统一契约 { code:200, data:{ type:"image", ... } }，
  * 走 normalizeResult 通用分支透传（不新增特例）；非纯图文返回 code:0 + 明确 msg。
@@ -550,12 +563,19 @@ async function parseBilibiliOpus(url, opusId) {
     // UP主主页公开统计与简介：detail 接口仅给 mid/name/face，粉丝/关注/获赞/简介
     // 需补调空间公开接口（匿名可获取；被风控时静默失败，缺失字段前端自动隐藏）。
     // 平铺进 data 与视频解析归一化后的 ParseData 字段对齐（author/sign/followingCount/...）
-    const upStats = await fetchBilibiliUpStats(data.authorId);
+    // 收藏数走独立的 opus/detail 通道，与空间统计并行取，互不阻塞。
+    const [upStats, favorite] = await Promise.all([
+      fetchBilibiliUpStats(data.authorId),
+      fetchBilibiliOpusFavorite(opusId, headers),
+    ]);
     data.sign = upStats.sign || undefined;
     data.followingCount = upStats.followingCount;
     data.followerCount = upStats.followerCount;
     data.totalFavorited = upStats.totalFavorited;
-    logger.log(`Successfully parsed bilibili opus ${opusId}, images: ${data.images.length}`);
+    if (favorite != null) data.stat.favorite = favorite;
+    logger.log(
+      `Successfully parsed bilibili opus ${opusId}, type: ${data.type}, images: ${data.images?.length ?? 0}`
+    );
     // 带 Cookie 解析成功 → 复位失效告警计数（图文与视频共享同一出口状态）
     biliCookieGuard.note({
       configured: hasBiliCookie,

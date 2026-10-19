@@ -10,13 +10,8 @@
  * （如音频代理）可直接复用，避免再次漏接。
  */
 
-import {
-  getClientIP,
-  isBlockedIP,
-  logger,
-  rateLimit,
-  sanitizeUrl,
-} from "@/lib/api-utils";
+import { logger, sanitizeUrl } from "@/lib/api-utils";
+import { getClientIP, isBlockedIP, rateLimit } from "@/lib/server-guard";
 
 /**
  * 代理端点独立限流档位（默认解析接口是 60/min）。

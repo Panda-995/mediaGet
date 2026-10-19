@@ -160,6 +160,53 @@ describe("douyin-extract：页面快照回归", () => {
     expect(extractUserFromRouter(null)).toBeNull();
   });
 
+  it("bit_rate 档位表：去水印后按高度降序透出，主直链跟最高档", () => {
+    const item = (bitRates) => ({
+      loaderData: {
+        "video_(id)/page": {
+          videoInfoRes: {
+            item_list: [
+              {
+                desc: "档位视频",
+                aweme_type: 0,
+                author: { nickname: "达", unique_id: "dy" },
+                video: {
+                  duration: 10000,
+                  play_addr: {
+                    uri: "v0d00",
+                    height: 720,
+                    url_list: ["https://v.douyin.com/playwm/default.mp4"],
+                  },
+                  bit_rate: bitRates,
+                },
+              },
+            ],
+          },
+        },
+      },
+    });
+    const tier = (gear, height, file) => ({
+      gear_name: gear,
+      bit_rate: height * 1000,
+      play_addr: { height, url_list: [`https://v.douyin.com/playwm/${file}`] },
+    });
+
+    const multi = parseVideoData(
+      item([tier("720p", 720, "720.mp4"), tier("1080p", 1080, "1080.mp4")])
+    );
+    expect(multi.code).toBe(200);
+    expect(multi.data.qualities).toEqual([
+      { quality: 1080, label: "1080p", url: "https://v.douyin.com/play/1080.mp4" },
+      { quality: 720, label: "720p", url: "https://v.douyin.com/play/720.mp4" },
+    ]);
+    expect(multi.data.url).toBe("https://v.douyin.com/play/1080.mp4");
+
+    // 只有一档：不出下拉，主直链仍走 play_addr 默认档
+    const single = parseVideoData(item([tier("720p", 720, "only.mp4")]));
+    expect("qualities" in single.data).toBe(false);
+    expect(single.data.url).toBe("https://v.douyin.com/play/default.mp4");
+  });
+
   it("从响应头提取 ttwid", () => {
     const res = new Response(null, {
       headers: {

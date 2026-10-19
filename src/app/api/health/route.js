@@ -1,4 +1,5 @@
-import { logger, getCorsHeaders } from "@/lib/api-utils";
+import { logger } from "@/lib/api-utils";
+import { getCorsHeaders } from "@/lib/server-guard";
 
 export const runtime = "nodejs";
 

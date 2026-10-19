@@ -8,7 +8,7 @@
 
 `mediaGet`（品牌「即刻解析」，线上 <https://get.hotier.cc.cd>）是一个 Next.js 15（App Router + React 19）解析下载站，含两大产品模块：
 
-1. **视频/图文/音乐内容解析（首页 `/`）**：支持 **21 个平台**（抖音、快手、微博、哔哩哔哩、小红书、汽水音乐、皮皮虾、皮皮搞笑、西瓜视频、最右、虎牙、AcFun、全民K歌、QQ音乐、六间房、新片场、好看视频、TikTok、X/Twitter、Instagram、YouTube），输入分享链接 / 整段分享文案 /（部分平台）`source+id`，自动识别平台与内容类型并输出无水印直链（清单以 `src/config/video-platforms.ts` 与 README 为准）。
+1. **视频/图文/音乐内容解析（首页 `/`）**：支持 **13 个平台**（抖音、快手、微博、哔哩哔哩、小红书、汽水音乐、西瓜视频、最右、AcFun、TikTok、X/Twitter、Instagram、YouTube），输入分享链接 / 整段分享文案 /（部分平台）`source+id`，自动识别平台与内容类型并输出无水印直链（清单以 `src/config/video-platforms.ts` 与 README 为准；QQ音乐 的歌曲链接归音乐区，不走视频解析核心）。
 2. **音乐解析中心（`/music`）**：多源聚合搜歌 / 试听 / 播放 / 歌词 / 封面 / 下载——默认 GD 聚合上游（`/api/music`，网易云/酷我/JOOX 等搜索）+ 自研直连搜索（`/api/music/self`，服务器直连腾讯/酷狗/咪咕等五家搜索，独立搜索源 chips）+ 歌曲链接解析（`/api/music/resolve`，酷狗与「被停用播放引擎的 QQ」返回 `engine-missing`）。平台「搜索引擎 / 播放引擎」为部署可配开关（env 覆盖 + 设置页 `/music/settings` 写 Turso 配置文档 `music.flags`，两维默认 6 平台全开）。**完整链路、开关变量与求值顺序见 `docs/architecture.md` §3 与 API.md §12。**
 
 另有静态页：FAQ（`/faq`）、法律页（`/legal/{terms,privacy,dmca}`）、`robots.ts` / `sitemap.ts`；全站 PWA、深浅主题（默认跟随系统）。
@@ -47,8 +47,9 @@ npm run build:cf     # OpenNext Cloudflare 构建（产物 .open-next/）
 - 抖音：`DOUYIN_COOKIE`（可选，仅增强；UA 轮询已硬编码，**没有 `DOUYIN_USER_AGENT`**）。
 - 哔哩哔哩：`BILIBILI_COOKIE`（强烈建议，穿透数据中心/海外出口 -412/-352 WAF；含失效自检告警）、`BILIBILI_USER_AGENT`（已写入 wrangler `[vars]`）。
 - 小红书：`XHS_COOKIE`（可选）。微博：自动游客模式，无需 Cookie（`WEIBO_COOKIE` 已废弃）。
+- 快手：`KUAISHOU_COOKIE`（可选，**只补作者主页的简介 / 获赞**；视频解析匿名即可，Cookie 只发 `www.kuaishou.com` 第一方，失效自动降级为匿名结果）。
 - Instagram：`IG_COOKIE`（强烈建议）、`IG_TIMEOUT_MS`（默认 20000）。
-- QQ音乐 source+id：`QQMUSIC_COOKIE`（可选，vkey 试听接口）。X/Twitter：`TWITTER_FIXER_SERVICES`（可选，覆盖 fixer 集）。
+- X/Twitter：`TWITTER_FIXER_SERVICES`（可选，覆盖 fixer 集）。
 - YouTube：`YOUTUBE_PIPED_HOSTS`（默认内置 3 个公共 Piped 候选）、`YOUTUBE_INVIDIOUS_HOSTS`（默认**不启用**，需显式配置或自托管）、`YOUTUBE_API_KEY`（Data API v3，仅优先元数据，无直链）、`YOUTUBE_API_TIMEOUT_MS`（默认 5000）、`YOUTUBE_SOURCE_TIMEOUT_MS`（默认 6000）。yt-dlp 已不参与 YouTube。
 - 音乐：`MUSIC_API_BASE` / `MUSIC_API_BASES`（GD 契约上游链；公共实例对数据中心出口会被 CF 人机校验拦，线上需自建可直连实例）。自研直连搜索（`/api/music/self`）为代码内直连实现，无需额外环境变量。
 - 统计：`TURSO_DB_URL` + `TURSO_AUTH_TOKEN`（未配置静默禁用）、`STATS_API_KEY`（`/api/stats` Bearer，未配置 403）、`TURSO_HTTP_TIMEOUT_MS`（可选，Turso 单次请求超时，默认 8000ms，夹在 500~60000；跨境链路或经代理访问 `turso.io` 慢时用它放宽，3s 级超时在跨境链路上必然误报「存储不可用」）。
@@ -76,7 +77,6 @@ npm run build:cf     # OpenNext Cloudflare 构建（产物 .open-next/）
 ## 部署
 
 - **Vercel**：导入即用；注意公共 GD 上游对数据中心出口会触发 CF 人机校验，`/api/music` 需 `MUSIC_API_BASE(S)` 指向可直连实例；TikTok（yt-dlp child_process）在 Serverless 不可用。
-- **Cloudflare Workers**（OpenNext）：`npm run build:cf` → `.open-next/`；`wrangler.toml` 已配 `[vars]`/`[assets]`；敏感 Cookie 经 GitHub Actions `wrangler secret put` 注入（`.github/workflows/deploy-cloudflare.yaml`）。
 - **Docker（当前线上正式运行方式）**：多阶段 `Dockerfile`（standalone 产物）内置 yt-dlp + ffmpeg（TikTok 依赖）并以非 root 运行。发布已**不再走 GitHub Actions**（原 `.github/workflows/deploy-to-docker.yaml` 移除）：改本地/服务器 `docker build -t <image> .` 后手动跑容器，等价运行参数：
   `docker run -d --name <repo> --restart unless-stopped --init --env-file /opt/1panel/apps/openresty/openresty/www/sites/parse.shenzjd.com/index/.env -p 5269:3000 <image>`
   （`--init` 必需：node 作 PID1 不回收孤儿进程；PO Token 用的 bgutil 容器是独立自建工程，本仓不启停，地址经 `.env` 的 `POT_BASE_URL` 配置）。历史自动发布配方留在 git 历史里可查。

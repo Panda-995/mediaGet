@@ -42,20 +42,6 @@ export const VIDEO_PLATFORMS = {
     gradient: "from-[#00c9b7] to-[#00e5d4]",
     logo: "/logos/qsmusic.svg",
   },
-  pipigx: {
-    name: "皮皮搞笑",
-    emoji: "🤣",
-    color: "#ff9f43",
-    gradient: "from-[#ff9f43] to-[#ffc048]",
-    logo: "/logos/pipigx.svg",
-  },
-  ppxia: {
-    name: "皮皮虾",
-    emoji: "🦐",
-    color: "#ff6b6b",
-    gradient: "from-[#ff6b6b] to-[#ff8787]",
-    logo: "/logos/pipixia.svg",
-  },
   xigua: {
     name: "西瓜视频",
     emoji: "🍉",
@@ -70,47 +56,12 @@ export const VIDEO_PLATFORMS = {
     gradient: "from-[#5f27cd] to-[#341f97]",
     logo: "/logos/zuiyou.svg",
   },
-  huya: {
-    name: "虎牙",
-    emoji: "🐯",
-    color: "#ff9f1a",
-    gradient: "from-[#ff9f1a] to-[#ffbf69]",
-    logo: "/logos/huya.svg",
-  },
   acfun: {
     name: "AcFun",
     emoji: "🅰️",
     color: "#fd4c5d",
     gradient: "from-[#fd4c5d] to-[#fdcb6e]",
     logo: "/logos/acfun.svg",
-  },
-  quanminkge: {
-    name: "全民K歌",
-    emoji: "🎤",
-    color: "#fc5c65",
-    gradient: "from-[#fc5c65] to-[#fd9644]",
-    logo: "/logos/quanminkge.svg",
-  },
-  sixroom: {
-    name: "六间房",
-    emoji: "6️⃣",
-    color: "#a55eea",
-    gradient: "from-[#a55eea] to-[#8854d0]",
-    logo: "/logos/sixroom.svg",
-  },
-  xinpianchang: {
-    name: "新片场",
-    emoji: "🎞️",
-    color: "#26de81",
-    gradient: "from-[#26de81] to-[#20bf6b]",
-    logo: "/logos/xinpianchang.svg",
-  },
-  haokan: {
-    name: "好看视频",
-    emoji: "👀",
-    color: "#45aaf2",
-    gradient: "from-[#45aaf2] to-[#4b7bec]",
-    logo: "/logos/haokan.svg",
   },
   twitter: {
     name: "X (Twitter)",
@@ -139,13 +90,6 @@ export const VIDEO_PLATFORMS = {
     color: "#FF0000",
     gradient: "from-[#FF0000] to-[#ff4d4d]",
     logo: "/logos/youtube.svg",
-  },
-  qqmusic: {
-    name: "QQ音乐",
-    emoji: "🎼",
-    color: "#31C27C",
-    gradient: "from-[#31C27C] to-[#5ED5A2]",
-    logo: "/logos/qqmusic.svg",
   },
 } as const;
 

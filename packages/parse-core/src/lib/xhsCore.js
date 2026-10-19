@@ -4,6 +4,7 @@
 import { TIMEOUT, UA_EDGE_WIN129 } from "./http";
 import { logger } from "./api-utils";
 import { getConfigOrEnv } from "../config";
+import { buildQualityList } from "./quality";
 
 /** 小红书 H5：桌面 Chrome UA，短链统一走 https */
 const XHS_USER_AGENT = UA_EDGE_WIN129;
@@ -87,12 +88,14 @@ function xhsHeaders({ referer, cookie, acceptJson } = {}) {
   return headers;
 }
 
-function output(code, msg, data = []) {
-  return {
-    code,
-    msg,
-    data,
-  };
+/**
+ * 小红书响应壳。失败时不带 `data`：契约声明 `data?: ParseData`，
+ * 用 `[]` 占位会让调用方把「没有结果」读成「空结果」。
+ */
+function output(code, msg, data) {
+  const result = { code, msg };
+  if (data !== undefined) result.data = data;
+  return result;
 }
 
 function normalizeXhsUrl(url) {
@@ -169,6 +172,48 @@ async function fetchXhsNoteHtml(url, attempt = 1) {
   }
 }
 
+/**
+ * 识别小红书的「拦截页」：链接失效/需要登录时，小红书会 302 到 /404 或 /login，
+ * 这两类页面同样带 __INITIAL_STATE__（但 note 是空壳或不存在），继续解析只会得到
+ * 误导性的「该内容不包含视频或图片」。这里先行判定并给出可操作提示。
+ */
+function detectXhsBlockedPage(finalUrl) {
+  if (!finalUrl) return null;
+  let path = "";
+  try {
+    path = new URL(finalUrl).pathname;
+  } catch {
+    return null;
+  }
+  if (/^\/login(\/|$)/.test(path)) {
+    return output(
+      400,
+      "该笔记需要登录才能浏览，请在小红书 App 内重新复制分享链接，或联系站长配置 XHS_COOKIE"
+    );
+  }
+  // 移动端/H5 入口的安全验证页（iPhone/微信 UA 直连时常见）
+  if (/^\/website-login\/captcha/.test(path)) {
+    return output(
+      400,
+      "小红书触发了安全验证，请稍后重试（或联系站长配置 XHS_COOKIE）"
+    );
+  }
+  // 笔记不可见：/website-login/error?error_code=300017（已删除/私密/被限制）
+  if (/^\/website-login\/error(\/|$)/.test(path) || /error_code=300017/.test(finalUrl)) {
+    return output(
+      400,
+      "笔记暂时无法查看：可能已删除、设为私密或被限制访问"
+    );
+  }
+  if (/^\/404(\/|$)/.test(path) || /error_code=300031/.test(finalUrl)) {
+    return output(
+      400,
+      "笔记暂时无法浏览：链接可能已失效或需要新的分享链接，请在小红书 App 内重新分享"
+    );
+  }
+  return null;
+}
+
 // 安全地获取嵌套属性
 function safeGet(obj, path) {
   try {
@@ -221,17 +266,101 @@ function resolveNotePayload(decoded) {
   }
 
   // 旧版结构
-  return (
+  const legacy =
     safeGet(decoded, "noteData.data.noteData") ||
     safeGet(decoded, "note.data") ||
     safeGet(decoded, "noteDetail.data") ||
     safeGet(decoded, "data.noteData") ||
     // 更多兜底路径
     safeGet(decoded, "note.noteDetailMap")?.[noteId]?.note ||
-    safeGet(decoded, "note.noteDetailMap")?.[noteId] ||
-    safeGet(decoded, "note") ||
-    null
-  );
+    safeGet(decoded, "note.noteDetailMap")?.[noteId];
+  if (legacy) return legacy;
+
+  // 兜底 decoded.note：登录页/404 页也带 note 空壳（无任何笔记字段），
+  // 直接返回会让错误被吞成「该内容不包含视频或图片」，这里按字段特征校验
+  const shell = safeGet(decoded, "note");
+  if (
+    shell &&
+    typeof shell === "object" &&
+    (shell.title || shell.desc || shell.noteId || shell.imageList || shell.video)
+  ) {
+    return shell;
+  }
+  return null;
+}
+
+/**
+ * 小红书页面的 __INITIAL_STATE__ 不是严格 JSON：
+ * 匿名页偶见 `undefined`，登录态页面还会带 `new Map([])` / `new Set([])`
+ * 这类 JS 字面量（AiNoteDetailStore 等 store），直接 JSON.parse 会报
+ * 「JSON数据解析失败」。这里按字符串边界安全改写为 JSON 等价形态。
+ */
+function sanitizeInitialStateJson(raw) {
+  let out = "";
+  let i = 0;
+  const n = raw.length;
+  let inString = false;
+
+  while (i < n) {
+    const ch = raw[i];
+
+    if (inString) {
+      out += ch;
+      if (ch === "\\") {
+        out += raw[i + 1] ?? "";
+        i += 2;
+        continue;
+      }
+      if (ch === '"') inString = false;
+      i += 1;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = true;
+      out += ch;
+      i += 1;
+      continue;
+    }
+
+    // new Map(...) / new Set(...) / new WeakMap(...) → {} / []
+    const ctor = /^new (Map|Set|WeakMap|WeakSet)\s*\(/.exec(raw.slice(i, i + 24));
+    if (ctor) {
+      const isMap = ctor[1] === "Map" || ctor[1] === "WeakMap";
+      i += ctor[0].length;
+      let depth = 1;
+      let str = false;
+      while (i < n && depth > 0) {
+        const c = raw[i];
+        if (str) {
+          if (c === "\\") {
+            i += 2;
+            continue;
+          }
+          if (c === '"') str = false;
+        } else if (c === '"') {
+          str = true;
+        } else if (c === "(") {
+          depth += 1;
+        } else if (c === ")") {
+          depth -= 1;
+        }
+        i += 1;
+      }
+      out += isMap ? "{}" : "[]";
+      continue;
+    }
+
+    if (raw.startsWith("undefined", i)) {
+      out += "null";
+      i += "undefined".length;
+      continue;
+    }
+
+    out += ch;
+    i += 1;
+  }
+  return out;
 }
 
 function extractInitialStateJson(html) {
@@ -445,7 +574,7 @@ async function fetchXhsProfileStats(userId, xsecToken = "") {
     if (!jsonRaw) return null;
     let decoded;
     try {
-      decoded = JSON.parse(jsonRaw.replace(/undefined/g, "null"));
+      decoded = JSON.parse(sanitizeInitialStateJson(jsonRaw));
     } catch {
       return null;
     }
@@ -493,13 +622,34 @@ async function fetchXhsProfileStats(userId, xsecToken = "") {
 }
 
 /**
- * 把第三方图片 URL 包成站内代理路径，绕过 Referer 防盗链
- * （如小红书 sns-webpic 只允许 Referer: xiaohongshu.com）。
- * 视频不代理（耗资源），仅图片走 /api/image。
+ * 从 video.media.stream 取可用视频档位。
+ * 旧结构键为编码名（h264/h265/av1），新结构改为档位标识（EF4~EF7）。
+ * 只认旧键会让视频笔记因取不到档位而落到图文分支，丢掉整条视频直链；
+ * 因此旧键优先（h264 浏览器兼容性最好），全缺时遍历所有数组键兜底。
  */
-function proxifyImage(url) {
-  if (!url) return "";
-  return `/api/image?url=${encodeURIComponent(url)}`;
+function collectVideoEntries(stream) {
+  if (!stream || typeof stream !== "object") return [];
+
+  const isEntry = (e) =>
+    e &&
+    typeof e === "object" &&
+    (e.masterUrl || (Array.isArray(e.backupUrls) && e.backupUrls.length > 0));
+
+  for (const key of ["h264", "h265", "av1", "h266"]) {
+    const arr = stream[key];
+    if (!Array.isArray(arr)) continue;
+    const list = arr.filter(isEntry);
+    if (list.length) return list;
+  }
+
+  const fallback = [];
+  for (const value of Object.values(stream)) {
+    if (!Array.isArray(value)) continue;
+    for (const entry of value) {
+      if (isEntry(entry)) fallback.push(entry);
+    }
+  }
+  return fallback;
 }
 
 /**
@@ -572,6 +722,14 @@ export async function xhsParse(url) {
       );
     }
 
+    // 被 302 到登录墙或 404（error_code=300031）时先判定：
+    // 这两类页面也带 __INITIAL_STATE__，继续解析只会得到误导性文案
+    const blocked = detectXhsBlockedPage(finalUrl);
+    if (blocked) {
+      console.log("[xhs] blocked page, finalUrl:", finalUrl);
+      return blocked;
+    }
+
     let jsonRaw = extractInitialStateJson(html);
     if (!jsonRaw) {
       // 安全验证页/风控拦截的典型特征（页面不含 __INITIAL_STATE__）
@@ -589,7 +747,7 @@ export async function xhsParse(url) {
       return output(400, "未找到页面数据，小红书可能更新了页面结构");
     }
 
-    jsonRaw = jsonRaw.replace(/undefined/g, "null");
+    jsonRaw = sanitizeInitialStateJson(jsonRaw);
 
     let decoded;
     try {
@@ -698,19 +856,36 @@ export async function xhsParse(url) {
 
     // 检查视频URL
     let videoUrl = null;
+    let videoQualities;
     const videoStream = safeGet(noteData, "video.media.stream");
 
     if (videoStream && typeof videoStream === "object") {
-      // h264 优先（浏览器兼容性最好），h265 兜底；均优先取裸直链
-      const h264List = videoStream.h264;
-      if (Array.isArray(h264List) && h264List.length > 0 && h264List[0]) {
-        videoUrl = await pickStableVideoUrl(h264List[0]);
-      }
-      if (!videoUrl) {
-        const h265List = videoStream.h265;
-        if (Array.isArray(h265List) && h265List.length > 0 && h265List[0]) {
-          videoUrl = await pickStableVideoUrl(h265List[0]);
-        }
+      // 流表键名随版本变化：旧版 h264/h265/av1，新版编码档位标识 EF4~EF7。
+      // 优先取浏览器兼容性最好的 h264；旧键全缺时遍历所有数组键，避免
+      // 视频笔记因键名不匹配被误判成图文（丢掉整条视频直链）。
+      const list = collectVideoEntries(videoStream);
+      if (list.length) {
+        const stableUrls = await Promise.all(list.map(pickStableVideoUrl));
+        const resolved = list
+          .map((entry, i) => ({ entry, url: stableUrls[i] }))
+          .filter(({ url }) => url)
+          .sort(
+            (a, b) =>
+              (Number(b.entry.height) || 0) - (Number(a.entry.height) || 0) ||
+              (Number(b.entry.width) || 0) - (Number(a.entry.width) || 0)
+          );
+        videoUrl = resolved[0]?.url || null;
+        videoQualities = buildQualityList(
+          resolved.map(({ entry, url }) => {
+            const height = Number(entry.height) || 0;
+            const width = Number(entry.width) || 0;
+            return {
+              quality: height || width,
+              label: height ? `${height}p` : width ? `${width}w` : "",
+              url,
+            };
+          })
+        );
       }
     }
 
@@ -721,16 +896,15 @@ export async function xhsParse(url) {
       const imageList = noteData.imageList;
       if (Array.isArray(imageList) && imageList.length > 0 && imageList[0]) {
         const first = imageList[0];
-        data.cover = proxifyImage(
-          (
-            first.urlDefault ||
-            first.url ||
-            safeGet(first, "infoList.0.url") ||
-            ""
-          ).replace(/^http:/i, "https:")
-        );
+        data.cover = (
+          first.urlDefault ||
+          first.url ||
+          safeGet(first, "infoList.0.url") ||
+          ""
+        ).replace(/^http:/i, "https:");
       }
       data.url = videoUrl;
+      if (videoQualities) data.qualities = videoQualities;
       data.type = "video";
       return output(200, "解析成功", data);
     }
@@ -751,8 +925,8 @@ export async function xhsParse(url) {
             ""
           ).replace(/^http:/i, "https:");
           if (imageUrl) {
-            images.push(proxifyImage(imageUrl));
-            if (i === 0) cover = proxifyImage(imageUrl);
+            images.push(imageUrl);
+            if (i === 0) cover = imageUrl;
           }
         }
       }

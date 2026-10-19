@@ -8,26 +8,22 @@ export const PLATFORMS = {
   DOUYIN: "douyin",
   KUAISHOU: "kuaishou",
   XHS: "redbook",
-  PIPIXIA: "pipixia",
   XIGUA: "xigua",
   ZUIYOU: "zuiyou",
-  PIPI_GX: "pipigx",
-  HUYA: "huya",
   BILIBILI: "bilibili",
   WEIBO: "weibo",
-  QUANMIN_KGE: "quanminkge",
-  SIXROOM: "sixroom",
-  XINPIANCHANG: "xinpianchang",
-  HAOKAN: "haokan",
   ACFUN: "acfun",
   TWITTER: "twitter",
   TIKTOK: "tiktok",
   INSTAGRAM: "instagram",
   YOUTUBE: "youtube",
-  QQ_MUSIC: "qqmusic",
 } as const;
 
-type PlatformKey = (typeof PLATFORMS)[keyof typeof PLATFORMS];
+/**
+ * 内核平台标识（识别面与注册表 key 的同一套词表）。
+ * 注意与前端展示用的 `VideoPlatformKey` 不同词：小红书这里是 `redbook`，那边是 `xhs`。
+ */
+export type PlatformKey = (typeof PLATFORMS)[keyof typeof PLATFORMS];
 
 export interface PlatformInfoEntry {
   name: string;
@@ -63,13 +59,6 @@ export const PLATFORM_INFO: Record<PlatformKey, PlatformInfoEntry> = {
     shortDomains: ["xhslink.com", "xhslink.cn"],
     supportsIdParse: false,
   },
-  [PLATFORMS.PIPIXIA]: {
-    name: "皮皮虾",
-    nameEn: "Pipixia",
-    domains: ["pipix.com"],
-    shortDomains: [],
-    supportsIdParse: true,
-  },
   [PLATFORMS.XIGUA]: {
     name: "西瓜视频",
     nameEn: "Xigua",
@@ -85,20 +74,6 @@ export const PLATFORM_INFO: Record<PlatformKey, PlatformInfoEntry> = {
     shortDomains: ["share.xiaochuankeji.cn"],
     supportsIdParse: false,
   },
-  [PLATFORMS.PIPI_GX]: {
-    name: "皮皮搞笑",
-    nameEn: "Pipigaoxiao",
-    domains: ["pipigx.com"],
-    shortDomains: ["h5.pipigx.com"],
-    supportsIdParse: true,
-  },
-  [PLATFORMS.HUYA]: {
-    name: "虎牙直播",
-    nameEn: "Huya",
-    domains: ["huya.com"],
-    shortDomains: ["v.huya.com"],
-    supportsIdParse: true,
-  },
   [PLATFORMS.BILIBILI]: {
     name: "哔哩哔哩",
     nameEn: "Bilibili",
@@ -111,34 +86,6 @@ export const PLATFORM_INFO: Record<PlatformKey, PlatformInfoEntry> = {
     nameEn: "Weibo",
     // weibo.cn（含 m.weibo.cn）原被已移除的「绿洲」平台霸占，现回归微博阵营
     domains: ["weibo.com", "weibo.cn", "m.weibo.com"],
-    shortDomains: [],
-    supportsIdParse: true,
-  },
-  [PLATFORMS.QUANMIN_KGE]: {
-    name: "全民K歌",
-    nameEn: "Quanminkge",
-    domains: ["kg.qq.com", "quanmin.kg.qq.com"],
-    shortDomains: [],
-    supportsIdParse: true,
-  },
-  [PLATFORMS.SIXROOM]: {
-    name: "六间房",
-    nameEn: "Sixroom",
-    domains: ["6.cn"],
-    shortDomains: [],
-    supportsIdParse: true,
-  },
-  [PLATFORMS.XINPIANCHANG]: {
-    name: "新片场",
-    nameEn: "Xinpianchang",
-    domains: ["xinpianchang.com"],
-    shortDomains: [],
-    supportsIdParse: false,
-  },
-  [PLATFORMS.HAOKAN]: {
-    name: "好看视频",
-    nameEn: "Haokan",
-    domains: ["haokan.baidu.com", "haokan.hao123.com"],
     shortDomains: [],
     supportsIdParse: true,
   },
@@ -178,21 +125,16 @@ export const PLATFORM_INFO: Record<PlatformKey, PlatformInfoEntry> = {
     shortDomains: ["youtu.be"],
     supportsIdParse: false,
   },
-  [PLATFORMS.QQ_MUSIC]: {
-    name: "QQ音乐",
-    nameEn: "QQ Music",
-    // c6.y.qq.com（App 分享短链）/ i.y.qq.com（分享 webview）由后缀规则覆盖
-    domains: ["y.qq.com"],
-    shortDomains: [],
-    supportsIdParse: true,
-  },
 };
 
 // 从 URL 识别平台
-export function identifyPlatform(url: string): string | null {
+export function identifyPlatform(url: string): PlatformKey | null {
   const hostname = new URL(url).hostname.toLowerCase();
 
-  for (const [platform, info] of Object.entries(PLATFORM_INFO)) {
+  for (const [platform, info] of Object.entries(PLATFORM_INFO) as [
+    PlatformKey,
+    PlatformInfoEntry,
+  ][]) {
     // 检查主域名
     if (info.domains.some((d) => hostname === d || hostname.endsWith(`.${d}`))) {
       return platform;
@@ -230,7 +172,6 @@ export function getPlatformsSupportingIdParse(): string[] {
  */
 const ROUTE_DIR_ALIAS: Record<string, string> = {
   [PLATFORMS.XHS]: "xhs", // /api/xhs
-  [PLATFORMS.PIPIXIA]: "ppxia", // /api/ppxia
 };
 
 /** 收集某平台全部域名（主域 + 短链域），去重且保持顺序 */

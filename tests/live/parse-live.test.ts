@@ -11,16 +11,9 @@ import { GET as GETKuaishou } from "@/app/api/kuaishou/route.js";
 import { GET as GETWeibo } from "@/app/api/weibo/route.js";
 import { GET as GETXhs } from "@/app/api/xhs/route.js";
 import { GET as GETQsmusic } from "@/app/api/qsmusic/route.js";
-import { GET as GETPipigx } from "@/app/api/pipigx/route.js";
-import { GET as GETPpxia } from "@/app/api/ppxia/route.js";
 import { GET as GETXigua } from "@/app/api/xigua/route.js";
 import { GET as GETZuiyou } from "@/app/api/zuiyou/route.js";
-import { GET as GETHuya } from "@/app/api/huya/route.js";
 import { GET as GETAcfun } from "@/app/api/acfun/route.js";
-import { GET as GETQuanminkge } from "@/app/api/quanminkge/route.js";
-import { GET as GETSixroom } from "@/app/api/sixroom/route.js";
-import { GET as GETXinpianchang } from "@/app/api/xinpianchang/route.js";
-import { GET as GETHaokan } from "@/app/api/haokan/route.js";
 import { GET as GETTwitter } from "@/app/api/twitter/route.js";
 import { GET as GETTiktok } from "@/app/api/tiktok/route.js";
 import { GET as GETInstagram } from "@/app/api/instagram/route.js";
@@ -71,7 +64,12 @@ function expectPlayablePayload(id: string, json: Record<string, unknown>) {
     return;
   }
   if (Array.isArray(images) && images.length > 0) {
-    expect(images[0]).toMatch(/^https?:\/\//);
+    // web 出口已把图片直链改写成站内代理串（/api/image?url=...），内核直链由单测守卫
+    expect(images[0]).toMatch(/^(https?:\/\/|\/api\/image\?url=)/);
+    return;
+  }
+  // 纯文字动态（B站 WORD / 无图动态）：无媒体直链，正文在 desc
+  if (d.type === "text" && typeof d.desc === "string" && d.desc.trim()) {
     return;
   }
 
@@ -93,6 +91,12 @@ const CASES = [
     GET: GETBilibili,
   },
   {
+    id: "bilibili-opus-text",
+    path: "/api/bilibili",
+    envKey: "LIVE_URL_BILIBILI_OPUS_TEXT",
+    GET: GETBilibili,
+  },
+  {
     id: "kuaishou",
     path: "/api/kuaishou",
     envKey: "LIVE_URL_KUAISHOU",
@@ -106,41 +110,9 @@ const CASES = [
     envKey: "LIVE_URL_QSMUSIC",
     GET: GETQsmusic,
   },
-  {
-    id: "pipigx",
-    path: "/api/pipigx",
-    envKey: "LIVE_URL_PIPIGX",
-    GET: GETPipigx,
-  },
-  { id: "ppxia", path: "/api/ppxia", envKey: "LIVE_URL_PPXIA", GET: GETPpxia },
   { id: "xigua", path: "/api/xigua", envKey: "LIVE_URL_XIGUA", GET: GETXigua },
   { id: "zuiyou", path: "/api/zuiyou", envKey: "LIVE_URL_ZUIYOU", GET: GETZuiyou },
-  { id: "huya", path: "/api/huya", envKey: "LIVE_URL_HUYA", GET: GETHuya },
   { id: "acfun", path: "/api/acfun", envKey: "LIVE_URL_ACFUN", GET: GETAcfun },
-  {
-    id: "quanminkge",
-    path: "/api/quanminkge",
-    envKey: "LIVE_URL_QUANMINKGE",
-    GET: GETQuanminkge,
-  },
-  {
-    id: "sixroom",
-    path: "/api/sixroom",
-    envKey: "LIVE_URL_SIXROOM",
-    GET: GETSixroom,
-  },
-  {
-    id: "xinpianchang",
-    path: "/api/xinpianchang",
-    envKey: "LIVE_URL_XINPIANCHANG",
-    GET: GETXinpianchang,
-  },
-  {
-    id: "haokan",
-    path: "/api/haokan",
-    envKey: "LIVE_URL_HAOKAN",
-    GET: GETHaokan,
-  },
   {
     id: "twitter",
     path: "/api/twitter",

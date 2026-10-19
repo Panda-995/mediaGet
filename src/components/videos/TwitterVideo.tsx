@@ -187,6 +187,7 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
           accent="neutral"
           inline
           parts={hasMultiVideo ? videos : undefined}
+          qualities={d.qualities}
           downloadName={downloadName}
           downloadText={hasMultiVideo ? "下载视频" : undefined}
           onDownloadClick={hasMultiVideo ? scrollToDownload : undefined}
@@ -270,8 +271,9 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
       {/* 作品信息：发布时间 / 时长 / 类型（博主卡已展示作者信息） */}
       <ParseInfoPanel platform="twitter" data={d} title="推文信息" />
 
-      {/* 多P下载选项：分P逐条列出，每条一个下载按钮（推特每P单一清晰度直链，
-          无需B站的档位列表）。文件名带P序号，逐P下载互不覆盖 */}
+      {/* 多P下载选项：分P逐条列出，每条一个下载按钮。
+          多档位视频每P行内显示清晰度下拉，单档保持 MP4 徽标。
+          文件名带P序号，逐P下载互不覆盖 */}
       {hasVideo && hasMultiVideo && (
         <Card id="twitter-download" className="p-5 scroll-mt-24">
           <div className="mb-4 flex items-center justify-between gap-3">
@@ -323,6 +325,7 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
                 durationText={item.durationFormat}
                 badge="MP4"
                 href={item.url}
+                qualities={item.qualities}
                 buildHref={(url) =>
                   `/api/video-proxy?url=${encodeURIComponent(
                     url

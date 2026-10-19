@@ -3,6 +3,7 @@ import { TIMEOUT, UA_IOS_SAFARI_16_6 } from "./http";
 import { logger, beijingNow } from "./api-utils";
 import { douyinPublicFallback } from "./douyinFallback";
 import { sleep } from "./anti-bot";
+import { guardedFetch } from "../runtime";
 import { request as httpsRequest } from "node:https";
 import { getConfigOrEnv } from "../config";
 import {
@@ -205,9 +206,9 @@ export async function douyinParse(url) {
           if (videoInfo) break;
           if (Date.now() - startTime > 20000) break;
           try {
-            const response = await fetch(fetchUrl, {
+            const response = await guardedFetch(fetchUrl, {
               headers: buildFetchHeaders(ua),
-              signal: AbortSignal.timeout(TIMEOUT.DEFAULT),
+              timeoutMs: TIMEOUT.DEFAULT,
             });
             const html = await response.text();
             lastHtml = html;
@@ -424,9 +425,9 @@ async function fetchUserStats(secUid, buildFetchHeaders) {
         for (const fetchUrl of urls) {
           if (Date.now() - startTime > 15000) return null;
           try {
-            const response = await fetch(fetchUrl, {
+            const response = await guardedFetch(fetchUrl, {
               headers: buildFetchHeaders(ua),
-              signal: AbortSignal.timeout(FALLBACK_TIMEOUT_MS),
+              timeoutMs: FALLBACK_TIMEOUT_MS,
             });
             const html = await response.text();
             const parsed = tryParseEmbedded(html);
@@ -463,13 +464,13 @@ async function fetchUserStats(secUid, buildFetchHeaders) {
     const url = `https://www.iesdouyin.com/web/api/v2/user/info/?sec_uid=${encodeURIComponent(
       secUid
     )}`;
-    const response = await fetch(url, {
+    const response = await guardedFetch(url, {
       headers: {
         ...MOBILE_HEADERS,
         Accept: "application/json, text/plain, */*",
         Referer: "https://www.douyin.com/",
       },
-      signal: AbortSignal.timeout(TIMEOUT.DEFAULT),
+      timeoutMs: TIMEOUT.DEFAULT,
     });
     const json = await response.json();
     const u = json?.user_info;
@@ -509,6 +510,9 @@ async function fetchUserStats(secUid, buildFetchHeaders) {
  * www.iesdouyin.com 解析失败或超时，其他域名正常）时，改走 HTTPS 加密 DNS 查询
  * 真实 IP。dns.alidns.com 走标准 HTTPS，通常不受 UDP 污染影响。
  * 返回 IPv4 地址数组；失败返回空数组。
+ *
+ * 这两条（DoH 与下面的 httpsGetViaIp）刻意**不走内核运行时**：它们的存在意义就是
+ * 绕开常规网络栈直连，注入代理 fetch 会让它们退化成普通请求。
  */
 async function resolveHostViaDoh(hostname) {
   try {
@@ -562,10 +566,10 @@ function httpsGetViaIp(hostname, ip, pathname, headers) {
  */
 async function extractIdAndRedirectUrl(url) {
   try {
-    const response = await fetch(url, {
+    const response = await guardedFetch(url, {
       headers: MOBILE_HEADERS,
       redirect: "follow",
-      signal: AbortSignal.timeout(SHARE_PAGE_TIMEOUT_MS),
+      timeoutMs: SHARE_PAGE_TIMEOUT_MS,
     });
     const finalUrl = response.url || url;
 

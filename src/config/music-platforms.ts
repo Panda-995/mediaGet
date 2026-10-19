@@ -4,16 +4,11 @@ import type { VideoPlatformKey } from "@/config/video-platforms";
  * 音乐类平台 key（前端音乐解析播放器页使用）
  *
  * 只有「解析结果为音乐内容（音频试听/下载直链）」的平台才能放这里：
- * - qqmusic：QQ 音乐单曲分享链接（y.qq.com / c6.y.qq.com），type: music
  * - qsmusic：汽水音乐单曲分享链接（music.douyin.com），音频直链
  *
- * 注：quanminkge（全民K歌）解析返回的是视频直链（playurl_video），
- * 属于视频/图文内容，因此归「视频解析页」（/），不在此列。
+ * QQ音乐 不在此列：它的歌曲链接解析归音乐区 /api/music/resolve，不走视频解析核心。
  */
-export const MUSIC_PLATFORM_KEYS = [
-  "qqmusic",
-  "qsmusic",
-] as const satisfies readonly VideoPlatformKey[];
+export const MUSIC_PLATFORM_KEYS = ["qsmusic"] as const satisfies readonly VideoPlatformKey[];
 
 export type MusicPlatformKey = (typeof MUSIC_PLATFORM_KEYS)[number];
 

@@ -14,6 +14,7 @@ import {
   parseViaFixer,
   parseVideoId,
   pickBestMp4,
+  pickMp4Qualities,
   pickFxTweet,
   pickVxtweet,
   raceFixerResults,
@@ -194,13 +195,13 @@ describe("fxTwitter 适配器 (buildFxResult)", () => {
     expect(d.videos).toEqual([
       expect.objectContaining({
         url: "https://example.com/video1.mp4",
-        duration: 65,
+        duration: 65000,
         durationFormat: "1:05",
         cover: "https://example.com/thumb1.jpg",
       }),
       expect.objectContaining({
         url: "https://example.com/video2.mp4",
-        duration: 10,
+        duration: 10000,
         durationFormat: "0:10",
         cover: "https://example.com/thumb2.jpg",
       }),
@@ -415,12 +416,12 @@ describe("vxtwitter 适配器 (buildVxtwitterResult + pickVxtweet)", () => {
     expect(d.videos).toEqual([
       expect.objectContaining({
         url: "https://example.com/video.mp4",
-        duration: 65,
+        duration: 65000,
         durationFormat: "1:05",
       }),
       expect.objectContaining({
         url: "https://example.com/video2.mp4",
-        duration: 20,
+        duration: 20000,
         durationFormat: "0:20",
       }),
     ]);
@@ -834,6 +835,35 @@ describe("pickBestMp4：兼容两套字段命名", () => {
 
   it("无 mp4 时返回空串", () => {
     expect(pickBestMp4([{ type: "application/x-mpegURL", src: "x.m3u8" }])).toBe("");
+  });
+});
+
+describe("pickMp4Qualities：variants 全档位映射", () => {
+  const v = (path: string, bitrate: number, type = "video/mp4") => ({
+    url: `https://video.twimg.com/amplify_video/1/vid/avc1/${path}`,
+    bitrate,
+    content_type: type,
+  });
+
+  it("按高度降序；同高度只留高码率；m3u8 不进档位", () => {
+    const qualities = pickMp4Qualities([
+      v("2160x2676/low.mp4", 4000000),
+      v("2160x2676/high.mp4", 5000000),
+      v("720x892/c.mp4", 2176000),
+      v("1280x720/d.mp4", 2176000),
+      v("1280x720/e.m3u8", 900000, "application/x-mpegURL"),
+    ]);
+    expect(qualities).toEqual([
+      { quality: 2676, label: "2676p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/2160x2676/high.mp4" },
+      { quality: 892, label: "892p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/720x892/c.mp4" },
+      { quality: 720, label: "720p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/d.mp4" },
+    ]);
+  });
+
+  it("只有一档 mp4 时不出档位；无 mp4 返回 undefined", () => {
+    expect(pickMp4Qualities([v("1280x720/only.mp4", 1000000)])).toBeUndefined();
+    expect(pickMp4Qualities([v("1280x720/e.m3u8", 900000, "application/x-mpegURL")])).toBeUndefined();
+    expect(pickMp4Qualities(null as never)).toBeUndefined();
   });
 });
 

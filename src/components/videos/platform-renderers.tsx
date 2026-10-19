@@ -9,9 +9,6 @@ import {
   WeiboVideo,
   XhsVideo,
   QsMusicVideo,
-  QymusicVideo,
-  PipigxVideo,
-  PpxiaVideo,
   TwitterVideo,
   YouTubeVideo,
   GenericParsedVideo,
@@ -27,7 +24,7 @@ import {
  *   其余页面（page.tsx）零改动。
  *
  * key 使用前端平台 key（config/video-platforms.ts 的 VIDEO_PLATFORMS），
- * 与后端返回的 key 命名差异（xhs↔redbook、ppxia↔pipixia）由 VideoParserForm
+ * 与后端返回的 key 命名差异（xhs↔redbook）由 VideoParserForm
  * 在写入结果时统一覆盖为前端 key。
  */
 export type VideoResultRenderer = ComponentType<{ data: ApiResponse }>;
@@ -41,9 +38,6 @@ export const platformRenderers: Partial<
   weibo: WeiboVideo,
   xhs: XhsVideo,
   qsmusic: QsMusicVideo,
-  qqmusic: QymusicVideo,
-  pipigx: PipigxVideo,
-  ppxia: PpxiaVideo,
   twitter: TwitterVideo,
   youtube: YouTubeVideo,
 };

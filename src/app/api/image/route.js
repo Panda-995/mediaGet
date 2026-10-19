@@ -6,7 +6,7 @@
  *
  * - 小红书 xhscdn 图床：fetch 时带 Referer: https://www.xiaohongshu.com/
  * - 其他图床：直接 fetch（不强制 Referer，避免误伤）
- * - 内存 LRU 缓存 6 小时（图床 URL 不变，重复请求免重复 fetch），上限 500 条
+ * - 内存 LRU 缓存 6 小时（图床 URL 不变，重复请求免重复 fetch）
  * - 10MB 上限保护
  * - 透传 Content-Type，加 Cache-Control: public, max-age=21600
  *
@@ -16,12 +16,17 @@
 import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
-import { createTtlCache, getClientIP, logger } from "@/lib/api-utils";
+import { createTtlCache, logger } from "@/lib/api-utils";
+import { getClientIP } from "@/lib/server-guard";
 import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
 
-// 有界 TTL 缓存：此前是无上限 Map，配合「url 完全可控 + 无限流」可被撑爆内存
-const cache = createTtlCache({ max: 500, ttlMs: 6 * 60 * 60 * 1000 });
+// 有界 TTL 缓存：此前是无上限 Map，配合「url 完全可控 + 无限流」可被撑爆内存。
+// createTtlCache 的 max 只数条目不看字节，而回源图大小由第三方决定（微博图集升 /large/ 档后
+// 单图可达 3.7MB），所以这里用「条数 × 可缓存字节」两道闸共同定死上限：
+// 40 条 × 4MB = 最坏驻留 160MB；超过 CACHEABLE_MAX_BYTES 的图仍然正常透传，只是不进缓存。
+const cache = createTtlCache({ max: 40, ttlMs: 6 * 60 * 60 * 1000 });
 const MAX_BYTES = 10 * 1024 * 1024;
+const CACHEABLE_MAX_BYTES = 4 * 1024 * 1024;
 
 function isXhsHost(hostname) {
   return hostname === "xhscdn.com" || hostname.endsWith(".xhscdn.com");
@@ -142,7 +147,10 @@ export async function GET(request) {
     }
 
     const contentType = upstream.headers.get("content-type") || "image/jpeg";
-    cache.set(cacheKey, { buffer, contentType });
+    // 大图不进缓存：条数闸拦不住「少量巨图撑爆内存」，按字节再闸一道（见上方缓存声明）
+    if (buffer.length <= CACHEABLE_MAX_BYTES) {
+      cache.set(cacheKey, { buffer, contentType });
+    }
 
     return new Response(buffer, {
       headers: {

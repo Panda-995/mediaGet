@@ -13,6 +13,7 @@
 import { TIMEOUT, UA_CHROME_WIN126 } from "./http";
 import { logger } from "./api-utils";
 import { getConfigOrEnv } from "../config";
+import { buildQualityList } from "./quality";
 
 const UA = UA_CHROME_WIN126;
 // 部署侧配置浏览器登录后的 sessionid Cookie（示例："sessionid=xxx; mid=yyy"）
@@ -82,6 +83,33 @@ function videoUrl(node) {
     )[0].url;
   }
   return "";
+}
+
+/**
+ * video_versions 全档位 → 契约 qualities。
+ * 同一尺寸可能重复下发（不同 CDN/编码），按 height（缺失时 width）归并取第一条；
+ * 按宽度降序，与主直链选择逻辑一致。
+ */
+function videoQualities(node) {
+  const versions = Array.isArray(node?.video_versions)
+    ? node.video_versions.filter((v) => v && v.url)
+    : [];
+  const byTier = new Map();
+  for (const version of [...versions].sort(
+    (a, b) => (b.width || 0) - (a.width || 0)
+  )) {
+    const height = Number(version.height) || 0;
+    const width = Number(version.width) || 0;
+    const key = height || width || version.url;
+    if (!byTier.has(key)) byTier.set(key, { height, width, url: version.url });
+  }
+  return buildQualityList(
+    [...byTier.values()].map(({ height, width, url }) => ({
+      quality: height || width,
+      label: height ? `${height}p` : width ? `${width}w` : "",
+      url,
+    }))
+  );
 }
 
 function captionOf(media) {
@@ -167,11 +195,13 @@ export function normalizeInstagramMedia(media) {
 
   // 视频（Reels / 单视频 / 图集内含视频）：以首个视频为主媒体
   if (primary?.is_video) {
-    const url = videoUrl(primary);
+    const qualities = videoQualities(primary);
+    const url = qualities?.[0]?.url || videoUrl(primary);
     return {
       ...base,
       type: "video",
       url: url || "",
+      ...(qualities ? { qualities } : {}),
       cover: base.cover || largestDisplayUrl(primary),
       duration: (primary?.video_duration || media?.video_duration || 0) * 1000,
     };

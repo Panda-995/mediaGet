@@ -21,7 +21,8 @@
 import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
-import { getClientIP, logger } from "@/lib/api-utils";
+import { logger } from "@/lib/api-utils";
+import { getClientIP } from "@/lib/server-guard";
 import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
 
 function isXhsHost(hostname) {

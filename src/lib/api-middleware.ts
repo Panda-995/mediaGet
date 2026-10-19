@@ -1,20 +1,19 @@
 // 通用 API 中间件函数
+import { beijingNow, isValidUrl, logger, sanitizeUrl } from "@/lib/api-utils";
 import {
   getCachedResponse,
-  setCacheResponse,
-  rateLimit,
-  isValidUrl,
-  sanitizeUrl,
   getClientIP,
   getCorsHeaders,
-  logger,
   errorResponse,
-  serverErrorResponse,
-  parseErrorResponse,
   isBlockedIP,
-  beijingNow,
-} from "@/lib/api-utils";
+  parseErrorResponse,
+  rateLimit,
+  serverErrorResponse,
+  setCacheResponse,
+} from "@/lib/server-guard";
 import { normalizeResult } from "@/lib/normalize-result";
+// 图片直链 → 站内代理的出参改写（宿主形态，内核只出直链；见 lib/image-proxy.js）
+import { proxifyResult } from "@/lib/image-proxy";
 import { extractUrlFromShareText } from "@/lib/share-text";
 import { recordParse } from "@/lib/analytics";
 import { honeypotResponse } from "@/lib/honeypot";
@@ -322,7 +321,9 @@ export const createApiHandler = (
       }
 
       // 统一响应模型：成功结果在出口统一归一化（code=200 + data 统一字段契约）
-      const result = normalizeResult(rawResult);
+      // 归一化之后紧接图片改写：内核给的是直链，站内 `/api/image` 代理是 web 的出参形态，
+      // 必须挂在缓存写入之前，否则缓存命中的是半成品形态。
+      const result = proxifyResult(normalizeResult(rawResult));
 
       // 解析结果（成功/失败）异步记录行为分析。
       // 必须 await（同 CF Workers isolate 冻结问题），写入失败静默不影响主流程

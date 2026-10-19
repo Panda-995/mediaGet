@@ -100,7 +100,7 @@ export type PlayMedia = "audio" | "video";
 
 export interface PlayableTrack {
   key: string;
-  /** 平台 key：qqmusic / qsmusic / netease / kuwo / joox */
+  /** 平台 key：GD 源（netease / tencent / kuwo / joox …）与自研源（kugou / migu） */
   source: string;
   sourceLabel: string;
   /** 品牌强调色（封面占位 / 轨道底色） */

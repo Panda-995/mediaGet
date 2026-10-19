@@ -53,6 +53,7 @@
     "@types/react-dom": "^19",
     "autoprefixer": "^10",
     "dotenv": "^17.4.2",
+    "esbuild": "^0.28.2",
     "eslint": "^9",
     "eslint-config-next": "^15.3.9",
     "jsdom": "^29.1.1",

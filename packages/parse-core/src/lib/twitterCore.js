@@ -5,6 +5,7 @@ import { DEFAULT_MOBILE_UA } from "./default-mobile-ua";
 import { getRedirectLocation } from "./redirect-location";
 import { TIMEOUT, fetchWithTimeout } from "./http";
 import { getConfigOrEnv } from "../config";
+import { buildQualityList } from "./quality";
 
 /** 视频时长（秒）→ "mm:ss" / "h:mm:ss"，无效返回空串 */
 function formatSeconds(sec) {
@@ -16,6 +17,17 @@ function formatSeconds(sec) {
   const ss = s % 60;
   const pad = (x) => String(x).padStart(2, "0");
   return h > 0 ? `${h}:${pad(m)}:${pad(ss)}` : `${m}:${pad(ss)}`;
+}
+
+/**
+ * 秒 → 毫秒。契约的 `duration`（顶层与 `videos[]`）全平台都是毫秒，
+ * 而 X 的三条来源分支给的是秒，统一在此换算，`durationFormat` 仍按秒算。
+ * @param {number|undefined} sec
+ * @returns {number|undefined}
+ */
+function secToMs(sec) {
+  const n = Number(sec);
+  return Number.isFinite(n) && n > 0 ? n * 1000 : undefined;
 }
 
 /** 数值归一：>0 的有限数字返回原值，其余（缺失/0/非法）返回 undefined */
@@ -198,6 +210,45 @@ function pickBestMp4(variants) {
     }
   }
   return best;
+}
+
+/** 从 variant 的尺寸字段 / 直链路径（/1280x720/）里取高度 */
+function variantHeight(v) {
+  const direct = Number(v?.height) || 0;
+  if (direct) return direct;
+  const m = /\/(\d{2,5})x(\d{2,5})\//.exec(String(v?.url || v?.src || ""));
+  return m ? Number(m[2]) : 0;
+}
+
+/**
+ * variants 全档位 → 契约 qualities。
+ * 同一档位可能有 avc1/hevc 多条（尺寸相同），按高度归并、保留高码率那条；
+ * 高度缺失时退回码率文案（如 "2176kbps"），保证下拉项仍可区分。
+ */
+export function pickMp4Qualities(variants) {
+  if (!Array.isArray(variants)) return undefined;
+  const byTier = new Map();
+  for (const v of variants) {
+    const ct = v?.content_type || v?.type || "";
+    if (!String(ct).includes("mp4")) continue;
+    const url = v?.url || v?.src || "";
+    if (!url) continue;
+    const bitrate = Number(v.bitrate) || 0;
+    const height = variantHeight(v);
+    const key = height ? `h:${height}` : `b:${bitrate}`;
+    const prev = byTier.get(key);
+    if (!prev || bitrate > prev.bitrate) byTier.set(key, { url, bitrate, height });
+  }
+  const list = [...byTier.values()]
+    .sort((a, b) => (b.height || 0) - (a.height || 0) || b.bitrate - a.bitrate)
+    .map((tier) => ({
+      quality: tier.height || tier.bitrate,
+      label: tier.height
+        ? `${tier.height}p`
+        : `${Math.round(tier.bitrate / 1000)}kbps`,
+      url: tier.url,
+    }));
+  return buildQualityList(list);
 }
 
 /**
@@ -436,7 +487,7 @@ function buildFxResult(t) {
     videos.push({
       title: "",
       url: u,
-      duration: durationSec,
+      duration: secToMs(durationSec),
       durationFormat: formatSeconds(durationSec),
       cover: thumb || "",
     });
@@ -541,7 +592,7 @@ function buildVxtwitterResult(t) {
       videos.push({
         title: "",
         url: m.url,
-        duration: durationSec,
+        duration: secToMs(durationSec),
         durationFormat: formatSeconds(durationSec),
         cover: m.thumbnail_url || "",
       });
@@ -691,7 +742,9 @@ async function parseViaSyndication(tweetId) {
     const mediaType = media?.type;
     const src = media?.media_url_https || "";
     if (mediaType === "video" || mediaType === "animated_gif") {
-      const mp4 = pickBestMp4(media?.video_info?.variants);
+      const variants = media?.video_info?.variants;
+      const qualities = pickMp4Qualities(variants);
+      const mp4 = qualities?.[0]?.url || pickBestMp4(variants);
       if (!mp4) continue;
       const durationMs = media?.video_info?.duration_millis;
       const durationSec =
@@ -701,7 +754,8 @@ async function parseViaSyndication(tweetId) {
       videos.push({
         title: "",
         url: mp4,
-        duration: durationSec,
+        ...(qualities ? { qualities } : {}),
+        duration: secToMs(durationSec),
         durationFormat: formatSeconds(durationSec),
         cover: src,
       });
@@ -713,7 +767,8 @@ async function parseViaSyndication(tweetId) {
   // 旧结构兜底：部分接口形态 mediaDetails 无视频项，json.video 提供主视频。
   // 顶层 video.durationMs 为毫秒；variants 字段名为 type/src，pickBestMp4 已兼容。
   if (videos.length === 0 && Array.isArray(json.video?.variants)) {
-    const mp4 = pickBestMp4(json.video.variants);
+    const qualities = pickMp4Qualities(json.video.variants);
+    const mp4 = qualities?.[0]?.url || pickBestMp4(json.video.variants);
     if (mp4) {
       const durationMs = json.video?.durationMs ?? json.video?.duration_millis;
       const durationSec =
@@ -723,7 +778,8 @@ async function parseViaSyndication(tweetId) {
       videos.push({
         title: "",
         url: mp4,
-        duration: durationSec,
+        ...(qualities ? { qualities } : {}),
+        duration: secToMs(durationSec),
         durationFormat: formatSeconds(durationSec),
         cover: json.video?.poster || "",
       });
@@ -744,6 +800,9 @@ async function parseViaSyndication(tweetId) {
   const fixTable = authorProfile.videoFixTable || new Map();
   for (const v of videos) {
     if (v?.url) v.url = fixTwimgVideoUrl(v.url, fixTable);
+    if (Array.isArray(v?.qualities)) {
+      for (const q of v.qualities) q.url = fixTwimgVideoUrl(q.url, fixTable);
+    }
   }
 
   return {
@@ -769,6 +828,7 @@ async function parseViaSyndication(tweetId) {
       durationFormat: primary?.durationFormat,
       // 多视频（含 GIF）：videos 列表供前端分P切换/下载；单视频留空走 url 主媒体
       videos: videos.length > 1 ? videos : undefined,
+      qualities: videos.length === 1 ? primary?.qualities : undefined,
       images: images.length > 0 ? images : undefined,
       type,
       time: Number.isFinite(created) ? created : undefined,

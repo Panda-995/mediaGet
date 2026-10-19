@@ -38,22 +38,13 @@ export function hasValidVideoUrl(text: string): boolean {
     "bilibili.com",
     "b23.tv",
     "music.douyin.com",
-    "h5.pipigx.com",
-    "h5.pipix.com",
     "ixigua.com",
     "xiaochuankeji.cn",
-    "huya.com",
     "acfun.cn",
-    "kg.qq.com",
-    "y.qq.com",
-    "c6.y.qq.com",
-    "xinpianchang.com",
-    "haokan.baidu.com",
-    "haokan.hao123.com",
     "twitter.com",
-    "x.com",
+    // 必须带 `//` 边界：裸 `x.com` 会把 pipix.com 等第三方域名误判成 X
+    "//x.com/",
     "t.co",
-    "6.cn",
     "tiktok.com",
     "vm.tiktok.com",
     "vt.tiktok.com",
@@ -79,35 +70,15 @@ export function detectPlatform(text: string): VideoPlatformKey | null {
   if (
     lower.includes("t.co/") ||
     lower.includes("twitter.com/") ||
-    lower.includes("x.com/")
+    /(?:\/\/|\.)x\.com\//.test(lower)
   ) {
     return "twitter";
   }
   if (lower.includes("b23.tv") || lower.includes("bilibili.com"))
     return "bilibili";
-  if (lower.includes("v.huya.com") || lower.includes("huya.com")) return "huya";
   if (lower.includes("acfun.cn")) return "acfun";
   if (lower.includes("ixigua.com")) return "xigua";
   if (lower.includes("xiaochuankeji.cn")) return "zuiyou";
-  if (
-    lower.includes("haokan.baidu.com") ||
-    lower.includes("haokan.hao123.com")
-  ) {
-    return "haokan";
-  }
-  if (lower.includes("kg.qq.com")) return "quanminkge";
-  if (lower.includes("y.qq.com")) return "qqmusic";
-  if (lower.includes("xinpianchang.com")) return "xinpianchang";
-
-  try {
-    const href = firstUrl.startsWith("http")
-      ? firstUrl
-      : `https://${firstUrl}`;
-    const host = new URL(href).hostname.toLowerCase();
-    if (host === "6.cn" || host.endsWith(".6.cn")) return "sixroom";
-  } catch {
-    /* ignore */
-  }
 
   if (lower.includes("instagram.com") || lower.includes("instagr.am"))
     return "instagram";
@@ -132,8 +103,6 @@ export function detectPlatform(text: string): VideoPlatformKey | null {
     return "weibo";
   if (lower.includes("v.kuaishou.com") || lower.includes("kuaishou.com"))
     return "kuaishou";
-  if (lower.includes("h5.pipigx.com")) return "pipigx";
-  if (lower.includes("h5.pipix.com")) return "ppxia";
   if (
     lower.includes("tiktok.com") ||
     lower.includes("vm.tiktok.com") ||

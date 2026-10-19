@@ -12,23 +12,14 @@ export const platformRoutes = {
   // key 必须与 lib/platforms.ts 的 PLATFORM_INFO 对齐（小红书是 redbook，
   // 统一入口 identifyPlatform 返回的 key），路由目录名仍是 /api/xhs
   redbook: () => import("@/app/api/xhs/route.js"),
-  huya: () => import("@/app/api/huya/route.js"),
-  haokan: () => import("@/app/api/haokan/route.js"),
   weibo: () => import("@/app/api/weibo/route.js"),
   xigua: () => import("@/app/api/xigua/route.js"),
   acfun: () => import("@/app/api/acfun/route.js"),
-  // 皮皮虾目录是 ppxia
-  pipixia: () => import("@/app/api/ppxia/route.js"),
-  pipigx: () => import("@/app/api/pipigx/route.js"),
-  sixroom: () => import("@/app/api/sixroom/route.js"),
   zuiyou: () => import("@/app/api/zuiyou/route.js"),
-  quanminkge: () => import("@/app/api/quanminkge/route.js"),
-  xinpianchang: () => import("@/app/api/xinpianchang/route.js"),
   twitter: () => import("@/app/api/twitter/route.js"),
   tiktok: () => import("@/app/api/tiktok/route.js"),
   instagram: () => import("@/app/api/instagram/route.js"),
   youtube: () => import("@/app/api/youtube/route.js"),
-  qqmusic: () => import("@/app/api/qqmusic/route.js"),
 };
 
 /** 平台 key → 解析函数获取器（兼容注册函数与动态导入的 route） */
@@ -68,17 +59,6 @@ export async function getPlatformParser(platform) {
         // Next 路由模块只保留 GET/runtime，故从 @/lib/twitterCore 挂载。
         try {
           const idMod = await import("@/lib/twitterCore.js");
-          if (typeof idMod.parseVideoId === "function") {
-            routeParser.parseVideoId = idMod.parseVideoId;
-          }
-        } catch {
-          // 挂载失败按不支持 ID 解析处理（统一解析器会给出明确提示）
-        }
-      } else if (platform === "qqmusic") {
-        // qqmusic 的 source+id 解析已从路由模块移出（Next 路由模块不允许
-        // 额外具名导出，否则 next build 类型校验失败），改从 lib 模块挂载。
-        try {
-          const idMod = await import("@/lib/qqmusic-id.js");
           if (typeof idMod.parseVideoId === "function") {
             routeParser.parseVideoId = idMod.parseVideoId;
           }

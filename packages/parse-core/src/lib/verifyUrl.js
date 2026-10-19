@@ -10,6 +10,7 @@
  */
 
 import { UA_IOS_SAFARI_16_6 } from "./http";
+import { guardedFetch } from "../runtime";
 const DEFAULT_UA = UA_IOS_SAFARI_16_6;
 
 /** HEAD 校验默认超时：4s（不在公共档位上，沿用原值；调用方可用 options.timeout 覆盖） */
@@ -18,11 +19,12 @@ const DEFAULT_VERIFY_TIMEOUT_MS = 4_000;
 export async function verifyDirectUrl(url, options = {}) {
   const { timeout = DEFAULT_VERIFY_TIMEOUT_MS, ua = DEFAULT_UA } = options;
   try {
-    const resp = await fetch(url, {
+    // 经内核运行时发请求：下游 setRuntime({ fetch }) 后代理/自建网络栈一并生效
+    const resp = await guardedFetch(url, {
       method: "HEAD",
       redirect: "follow",
       headers: { "User-Agent": ua, Accept: "*/*" },
-      signal: AbortSignal.timeout(timeout),
+      timeoutMs: timeout,
     });
     const status = resp.status;
     if (status >= 200 && status < 400) {
