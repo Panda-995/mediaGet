@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { ApiResponse, ParseData } from "@/types/api";
 import { formatCount } from "@/lib/format";
 import { scrollToElement } from "@/lib/dom";
@@ -99,13 +99,12 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
         <Card className="p-5">
           <div className="flex items-center gap-4">
             {d.avatar && (
-              <Image
+              <ProxiedImage
                 src={d.avatar}
                 alt={d.author || ""}
                 width={56}
                 height={56}
                 className="rounded-full border-2 border-glass-3"
-                unoptimized
               />
             )}
             <div className="flex-1 min-w-0">
@@ -206,14 +205,13 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
               {imageLoading && (
                 <div className="absolute inset-0 bg-glass-2 animate-pulse" />
               )}
-              <Image
+              <ProxiedImage
                 src={images[0]}
                 alt={d.title || "图片"}
                 fill
                 sizes="(max-width: 800px) 100vw, 800px"
                 className="object-cover"
                 priority
-                unoptimized
                 onLoad={() => setImageLoading(false)}
               />
             </a>
@@ -238,13 +236,12 @@ export default function TwitterVideo({ data }: TwitterVideoProps) {
                     selected={gallerySel.isSelected(index)}
                     onToggle={() => gallerySel.toggle(index)}
                     className="relative aspect-square rounded-xl overflow-hidden group block bg-black">
-                    <Image
+                    <ProxiedImage
                       src={imageUrl}
                       alt={`${d.title || "图片"} ${index + 1}`}
                       fill
                       sizes="(max-width: 800px) 50vw, 400px"
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
-                      unoptimized
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </SelectableImageLink>

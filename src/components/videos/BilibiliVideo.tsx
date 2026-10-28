@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { ApiResponse, ParsedVideoItem } from "@/types/api";
 import { formatCount } from "@/lib/format";
 import { scrollToElement } from "@/lib/dom";
@@ -101,13 +101,12 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
             {parsed?.avatar && (
               <div className="relative flex-shrink-0">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#00aeec] to-[#4dc9ff] blur-sm opacity-50" />
-                <Image
+                <ProxiedImage
                   src={parsed.avatar}
                   alt={parsed.author || ""}
                   width={56}
                   height={56}
                   className="relative rounded-full border-2 border-glass-3"
-                  unoptimized
                 />
               </div>
             )}
@@ -206,14 +205,13 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
               {imageLoading && (
                 <div className="absolute inset-0 bg-glass-2 animate-pulse" />
               )}
-              <Image
+              <ProxiedImage
                 src={displayImages[0]}
                 alt={parsed?.title || "图片"}
                 fill
                 sizes="(max-width: 800px) 100vw, 800px"
                 className="object-cover"
                 priority
-                unoptimized
                 onLoad={() => setImageLoading(false)}
                 onError={() => setImageLoading(false)}
               />
@@ -241,13 +239,12 @@ export default function BilibiliVideo({ data }: BilibiliVideoProps) {
                     className={`relative aspect-square rounded-xl overflow-hidden group block bg-black ${
                       images.length === 4 && index >= 2 ? "col-span-1" : ""
                     }`}>
-                    <Image
+                    <ProxiedImage
                       src={imageUrl}
                       alt={`${parsed?.title || "图片"} ${index + 1}`}
                       fill
                       sizes="(max-width: 800px) 50vw, 400px"
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
-                      unoptimized
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </SelectableImageLink>

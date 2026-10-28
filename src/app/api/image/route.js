@@ -1,19 +1,20 @@
 /**
- * 通用图片代理：解决第三方图床（小红书 sns-webpic、sns-avatar-qc 等）的
- * Referer 防盗链。这些 CDN 在 https 来源页面上直链加载会 403。
+ * 通用图片代理：解决第三方图床的 Referer 防盗链，并把访问者与图床隔离（同源请求、
+ * 不带外部 Referer、不暴露访问者 IP）。这些 CDN 在 https 来源页面上直链加载会 403。
  *
- * 用法：GET /api/image?url=<encodeURIComponent(原图 URL)>
+ * 用法：GET /api/image?url=<encodeURIComponent(原图 URL)>[&fallback=<逗号分隔的备选>]
  *
- * - 小红书 xhscdn 图床：fetch 时带 Referer: https://www.xiaohongshu.com/
- * - 其他图床：直接 fetch（不强制 Referer，避免误伤）
+ * - 按图床域名补 Referer：小红书 xhscdn、微博 sinaimg/weibocdn、快手 yximgs/kwimgs、
+ *   字节系 douyinpic/byteimg/toutiaoimg…（见 refererFor）；其余不带（含 B站 hdslb，
+ *   实测第三方 Referer 反而 403，见 docs/bilibili-opus-images-design.md）
  * - 内存 LRU 缓存 6 小时（图床 URL 不变，重复请求免重复 fetch）
  * - 10MB 上限保护
  * - 透传 Content-Type，加 Cache-Control: public, max-age=21600
+ * - 回源失败/超时返回 502，前端 ProxiedImage（utils/proxiedImage.ts）据此回退裸直链
  *
  * 安全：目标 URL 由查询参数决定，入口统一走 lib/proxy-guard.js
  * （IP 黑名单 + 限流 + SSRF 白名单，后者带 PROXY_SSRF_STRICT 灰度开关）。
- */
-import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
+ */import { TIMEOUT, UA_EDGE_WIN129 } from "@/lib/http";
 export const runtime = "nodejs";
 
 import { createTtlCache, logger } from "@/lib/api-utils";
@@ -75,11 +76,30 @@ function isKuaishouHost(hostname) {
   );
 }
 
+/**
+ * 字节系图床（抖音 / 西瓜 / 头条）：`p3.douyinpic.com`、`pXX-sign.douyinpic.com`、
+ * `pXX-sign.toutiaoimg.com` 一类子域形态不固定，按家族后缀判。
+ * 与 `/api/video-proxy` 对抖音系带 `Referer: douyin.com` 同一口径——境内出口实测不带
+ * Referer 也返回 200，境外节点是否被风控拦未实测到，带自家域的 Referer 没有反作用。
+ * 不含 TikTok 家族（tiktokcdn / ibyteimg）：另一套服务，Referer 口径不同，不顺手带上。
+ */
+function isByteImageHost(hostname) {
+  return (
+    hostname.endsWith(".douyinpic.com") ||
+    hostname.endsWith(".byteimg.com") ||
+    hostname.endsWith(".pstatp.com") ||
+    hostname.endsWith(".toutiaoimg.com") ||
+    hostname.endsWith(".toutiaoimg.cn") ||
+    hostname.endsWith(".douyinstatic.com")
+  );
+}
+
 /** 根据图床域名返回防盗链所需的 Referer（无特殊要求的返回 null） */
 function refererFor(hostname) {
   if (isXhsHost(hostname)) return "https://www.xiaohongshu.com/";
   if (isWeiboHost(hostname)) return "https://weibo.com/";
   if (isKuaishouHost(hostname)) return "https://www.kuaishou.com/";
+  if (isByteImageHost(hostname)) return "https://www.douyin.com/";
   return null;
 }
 
@@ -158,6 +178,11 @@ export async function GET(request) {
   }
 
   let lastError = "Upstream error";
+  // 回源预算：所有候选（主地址 + CDN 备选）共用一个超时信号。
+  // 逐候选各给一档会成倍放大（此前 LONG 15s × 候选数），而站点前面的 CDN 大约 10s 就
+  // 会掐断连接——那时浏览器拿到的是断连而不是 502，前端的「回退裸直链」虽也会触发，
+  // 但白等 10s。收到 DEFAULT(8s) 一档，最坏情况在中间层断裂之前返回 502。
+  const upstreamSignal = AbortSignal.timeout(TIMEOUT.DEFAULT);
   for (const candidate of candidates) {
     const headers = {
       "User-Agent":
@@ -172,7 +197,7 @@ export async function GET(request) {
     try {
       upstream = await fetch(candidate.href, {
         headers,
-        signal: AbortSignal.timeout(TIMEOUT.LONG),
+        signal: upstreamSignal,
       });
     } catch (e) {
       lastError = `Upstream fetch failed: ${e.message}`;

@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { Check, ChevronDown, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import TruncatedText from "@/components/ui/truncated-text";
@@ -174,13 +174,12 @@ export default function DownloadRow({
       id={id}
       className="flex flex-wrap items-center gap-3 rounded-xl bg-glass-2 hover:bg-glass-3 transition-colors duration-200 px-4 py-3 scroll-mt-24">
       {cover ? (
-        <Image
+        <ProxiedImage
           src={cover}
           alt={coverAlt || title}
           width={120}
           height={75}
           className="w-[120px] h-[75px] rounded-lg object-cover flex-shrink-0 border border-glass-3"
-          unoptimized
         />
       ) : (
         iconPlaceholder && (

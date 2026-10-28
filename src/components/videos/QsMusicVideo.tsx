@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { ChevronDown, Download, ExternalLink } from "lucide-react";
 import { ApiResponse, ParseData } from "@/types/api";
 import { Card } from "@/components/ui/card";
@@ -25,13 +25,12 @@ export default function QsMusicVideo({ data }: QsMusicVideoProps) {
       <Card className="p-5">
         <div className="flex items-center gap-4 mb-5">
           {musicData.cover && (
-            <Image
+            <ProxiedImage
               src={musicData.cover}
               alt={musicData.name || "音乐封面"}
               width={80}
               height={80}
               className="rounded-lg border border-border-subtle"
-              unoptimized
             />
           )}
           <div className="min-w-0">

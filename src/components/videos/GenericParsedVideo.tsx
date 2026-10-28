@@ -1,5 +1,5 @@
 "use client";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { ApiResponse, ParseData } from "@/types/api";
 import VideoPosterCard from "./VideoPosterCard";
 import ParseInfoPanel from "./ParseInfoPanel";
@@ -38,13 +38,12 @@ export default function GenericParsedVideo({
       <Card className="p-5">
         <div className="flex items-center gap-4">
           {d.avatar && (
-            <Image
+            <ProxiedImage
               src={d.avatar}
               alt={d.author || ""}
               width={56}
               height={56}
               className="rounded-full border-2 border-glass-3"
-              unoptimized
             />
           )}
           <div className="flex-1 min-w-0">
@@ -93,13 +92,12 @@ export default function GenericParsedVideo({
               target="_blank"
               rel="noopener noreferrer"
               className="block rounded-2xl overflow-hidden border border-border-subtle bg-black">
-              <Image
+              <ProxiedImage
                 src={images[0]}
                 alt=""
                 width={800}
                 height={800}
                 className="w-full h-auto object-contain max-h-[70vh]"
-                unoptimized
               />
             </a>
           ) : (
@@ -112,12 +110,11 @@ export default function GenericParsedVideo({
                     target="_blank"
                     rel="noopener noreferrer"
                     className="relative aspect-square rounded-lg overflow-hidden border border-border-subtle bg-black group">
-                    <Image
+                    <ProxiedImage
                       src={src}
                       alt=""
                       fill
                       className="object-contain p-1 transition-transform duration-300 group-hover:scale-105"
-                      unoptimized
                     />
                   </a>
                 ))}

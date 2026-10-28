@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { Download, Music, Pause, Play } from "lucide-react";
 import { buildVideoProxyUrl } from "@/utils/videoProxy";
 import { Button } from "@/components/ui/button";
@@ -228,12 +228,11 @@ export default function VideoPosterCard({
             className={`relative w-full ${
               tall ? "aspect-[9/16] sm:aspect-video" : "aspect-video"
             }`}>
-            <Image
+            <ProxiedImage
               src={currentCover}
               alt={alt || "视频封面"}
               fill
               className="object-contain"
-              unoptimized
             />
             {/* 中心播放图标：提示用户可点击封面播放，hover 时轻微放大 */}
             <div className="absolute inset-0 flex items-center justify-center bg-black/0 group-hover:bg-black/15 transition-colors duration-300">
