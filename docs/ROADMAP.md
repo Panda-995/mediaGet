@@ -1,4 +1,4 @@
-# MadiaGet 二次开发路线图
+# MediaGet 二次开发路线图
 
 > 部署目标：**Vercel**（Node.js runtime，无平台限制）
 > 开发方向：前端 UI 改版（品牌 / 主题 / 多语言 / 移动端）+ 功能增强（批量解析 / 收藏夹 / 下载管理 / 音频提取 / 历史记录）
@@ -39,12 +39,12 @@
 ## 二、路线图（按依赖顺序 7 个阶段）
 
 ### Phase 0 — 品牌与依赖剥离（地基，必须最先做）✅ 已完成
-**目标**：去除"神族九帝"品牌与外部依赖，换成自有品牌「即刻解析 / get.hotier.cc.cd」。
-- [x] `src/config/site.ts`：品牌名 → 即刻解析，域名 → hotier.cc.cd，URL → https://get.hotier.cc.cd
+**目标**：去除"神族九帝"品牌与外部依赖，换成自有品牌「MediaGet / get.hotier.cc.cd」。
+- [x] `src/config/site.ts`：品牌名 → MediaGet，域名 → hotier.cc.cd，URL → https://get.hotier.cc.cd
 - [x] 移除 `wx-auth-sdk` 全套（`layout.tsx` script、`wx-auth-client.ts`、`wx-auth-guard.ts`、`api-middleware.ts` 认证块、`VideoParserForm` 中 `showWxAuth` 调用、`tests/wx-auth-guard.test.ts`）
 - [x] 移除 `site-navbar` / `floating-qr` 外部组件，自研 `src/components/SiteHeader.tsx` 替换
 - [x] 清理 `page.tsx` / `platform/[key]` / `seo-platforms.ts` / `honeypot.ts` 硬编码品牌文案
-- [x] 品牌资源：手写 `public/icon.svg` + AI 生成 `icon.png` / `og-image.png`，manifest / robots / sitemap / API.md / README 全更新
+- [x] 品牌资源：图标与分享卡改由下游 desktop 端品牌母版生成（黑 tile + 白 M），manifest / robots / sitemap / API.md / README 全更新
 - [x] 后端去品牌：CORS 白名单 → `.hotier.cc.cd`、内部 UA / 缓存 key 同步更换
 - [x] 验收：全站扫描无残留，`npm run build` 通过，115 个单元测试全过
 

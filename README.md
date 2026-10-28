@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icon.svg" width="72" height="72" alt="MadiaGet" />
+  <img src="public/icon.png" width="72" height="72" alt="MediaGet" />
 </p>
 
-<h1 align="center">即刻解析 · MadiaGet</h1>
+<h1 align="center">MediaGet</h1>
 
 <p align="center">短视频解析 + 音乐解析下载服务：粘贴分享链接或整段分享文案，即得无水印直链。</p>
 
@@ -21,7 +21,7 @@
 
 > **免责声明**：本项目仅用于技术学习与搜索聚合演示，不存储、不传播任何受版权保护的内容，请勿用于商业或侵权用途。
 
-## 为什么是 MadiaGet
+## 为什么是 MediaGet
 
 - **一条链接出结果**：视频、图文、音乐统一解析，自动识别平台与内容类型
 - **不用手动挑链接**：整段分享文案直接粘贴，自动提取有效地址

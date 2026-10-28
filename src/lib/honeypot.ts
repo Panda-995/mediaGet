@@ -20,7 +20,7 @@ export function honeypotResponse(route = "unknown") {
     data: {
       title: HONEYPOT_MSG,
       desc: "",
-      author: "即刻解析",
+      author: "MediaGet",
       avatar: "",
       cover: "",
       // 关键：url 指向本站（避免外链挟持、防爬虫拿到第三方直链），

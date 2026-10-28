@@ -6,7 +6,7 @@
 
 ## 项目概况
 
-`MadiaGet`（品牌「即刻解析」，线上 <https://get.hotier.cc.cd>）是一个 Next.js 16（App Router + React 19）解析下载站，含两大产品模块：
+`MediaGet`（线上 <https://get.hotier.cc.cd>）是一个 Next.js 16（App Router + React 19）解析下载站，含两大产品模块：
 
 1. **视频/图文/音乐内容解析（首页 `/`）**：支持 **13 个平台**（抖音、快手、微博、哔哩哔哩、小红书、汽水音乐、西瓜视频、最右、AcFun、TikTok、X/Twitter、Instagram、YouTube），输入分享链接 / 整段分享文案 /（部分平台）`source+id`，自动识别平台与内容类型并输出无水印直链（清单以 `src/config/video-platforms.ts` 与 README 为准；QQ音乐 的歌曲链接归音乐区，不走视频解析核心）。
 2. **音乐解析中心（`/music`）**：多源聚合搜歌 / 试听 / 播放 / 歌词 / 封面 / 下载——默认 GD 聚合上游（`/api/music`，网易云/酷我/JOOX 等搜索）+ 自研直连搜索（`/api/music/self`，服务器直连腾讯/酷狗/咪咕等五家搜索，独立搜索源 chips）+ 歌曲链接解析（`/api/music/resolve`，酷狗与「被停用播放引擎的 QQ」返回 `engine-missing`）。平台「搜索引擎 / 播放引擎」为部署可配开关（env 覆盖 + 设置页 `/music/settings` 写 Turso 配置文档 `music.flags`，两维默认 6 平台全开）。**完整链路、开关变量与求值顺序见 `docs/architecture.md` §3 与 API.md §12。**

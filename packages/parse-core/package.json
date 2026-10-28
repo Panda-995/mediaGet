@@ -2,7 +2,7 @@
   "name": "@mediaget/parse-core",
   "version": "1.1.1",
   "type": "module",
-  "description": "MadiaGet 统一解析内核——web 与桌面端共用的单一代码源（版本化规则见 docs/architecture.md §8，反爬运行时见 §9）。",
+  "description": "MediaGet 统一解析内核——web 与桌面端共用的单一代码源（版本化规则见 docs/architecture.md §8，反爬运行时见 §9）。",
   "license": "ISC",
   "sideEffects": false,
   "engines": {

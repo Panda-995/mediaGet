@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* === 即刻解析 · AI 现代设计系统 ===
+/* === MediaGet · AI 现代设计系统 ===
    主题策略：class 模式
    - :root 定义浅色令牌
    - .dark class 覆盖为深色令牌（由 ThemeToggle / 初始化脚本在 <html> 上显式挂载）
