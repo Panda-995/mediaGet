@@ -19,6 +19,7 @@ export const runtime = "nodejs";
 import { createTtlCache, logger } from "@/lib/api-utils";
 import { getClientIP } from "@/lib/server-guard";
 import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
+import { recordProxyTraffic } from "@/lib/proxy-traffic";
 
 // 有界 TTL 缓存：此前是无上限 Map，配合「url 完全可控 + 无限流」可被撑爆内存。
 // createTtlCache 的 max 只数条目不看字节，而回源图大小由第三方决定（微博图集升 /large/ 档后
@@ -27,6 +28,29 @@ import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
 const cache = createTtlCache({ max: 40, ttlMs: 6 * 60 * 60 * 1000 });
 const MAX_BYTES = 10 * 1024 * 1024;
 const CACHEABLE_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * 边缘缓存：同一张图在多个 isolate / 多次冷启动之间复用，减少回源与出站。
+ * 仅 Workers 运行时提供 caches.default；Node（本地/Docker/Netlify）下为 null，自动跳过。
+ */
+function getEdgeCache() {
+  try {
+    const c = globalThis.caches;
+    if (c && c.default && typeof c.default.match === "function") return c.default;
+  } catch {
+    // 某些运行时访问 caches 会抛错，按「无边缘缓存」处理
+  }
+  return null;
+}
+
+/** 边缘缓存键：同源合成路径，只按主图 URL 区分（fallback 列表不影响同一张图） */
+function edgeCacheKey(request, primaryUrl) {
+  const origin = new URL(request.url).origin;
+  return new Request(
+    `${origin}/__proxy-cache/image?url=${encodeURIComponent(primaryUrl)}`,
+    { method: "GET" }
+  );
+}
 
 function isXhsHost(hostname) {
   return hostname === "xhscdn.com" || hostname.endsWith(".xhscdn.com");
@@ -106,12 +130,31 @@ export async function GET(request) {
   const cacheKey = candidates[0].href;
   const cached = cache.get(cacheKey);
   if (cached) {
+    recordProxyTraffic("image", cached.buffer.length);
     return new Response(cached.buffer, {
       headers: {
         "Content-Type": cached.contentType,
+        "Content-Length": String(cached.buffer.length),
         "Cache-Control": "public, max-age=21600",
+        "X-Proxy-Cache": "memory",
       },
     });
+  }
+
+  const edge = getEdgeCache();
+  const edgeKey = edge ? edgeCacheKey(request, cacheKey) : null;
+  if (edgeKey) {
+    try {
+      const hit = await edge.match(edgeKey);
+      if (hit) {
+        recordProxyTraffic("image", Number(hit.headers.get("content-length")) || 0);
+        const res = new Response(hit.body, hit);
+        res.headers.set("X-Proxy-Cache", "edge");
+        return res;
+      }
+    } catch (e) {
+      logger.warn(`[image] 边缘缓存读取失败: ${e.message}`);
+    }
   }
 
   let lastError = "Upstream error";
@@ -147,17 +190,28 @@ export async function GET(request) {
     }
 
     const contentType = upstream.headers.get("content-type") || "image/jpeg";
+    const responseHeaders = {
+      "Content-Type": contentType,
+      "Content-Length": String(buffer.length),
+      "Cache-Control": "public, max-age=21600",
+      "X-Proxy-Cache": "miss",
+    };
+    const response = new Response(buffer, { headers: responseHeaders });
+    recordProxyTraffic("image", buffer.length);
+
     // 大图不进缓存：条数闸拦不住「少量巨图撑爆内存」，按字节再闸一道（见上方缓存声明）
     if (buffer.length <= CACHEABLE_MAX_BYTES) {
       cache.set(cacheKey, { buffer, contentType });
+      if (edge && edgeKey) {
+        try {
+          await edge.put(edgeKey, response.clone());
+        } catch (e) {
+          logger.warn(`[image] 边缘缓存写入失败: ${e.message}`);
+        }
+      }
     }
 
-    return new Response(buffer, {
-      headers: {
-        "Content-Type": contentType,
-        "Cache-Control": "public, max-age=21600",
-      },
-    });
+    return response;
   }
   return new Response(lastError, { status: 502 });
 }

@@ -131,11 +131,6 @@ const COUNTRY_NAMES: Record<string, string> = {
   TW: "中国台湾",
 };
 
-/** 中文国家名 → 国家代码 */
-const COUNTRY_CODES: Record<string, string> = Object.fromEntries(
-  Object.entries(COUNTRY_NAMES).map(([code, name]) => [name, code]),
-);
-
 /** 英文国家名 → 中文（英文接口兜底） */
 const COUNTRY_EN_ZH: Record<string, string> = {
   China: "中国",
@@ -312,7 +307,7 @@ async function fetchText(
   }
 }
 
-/** IP 解析器注册表：全为中文归属地接口，竞速取最快结果 */
+/** IP 解析器注册表：统一走服务端 /api/ip（内部已做 pconline → ipwho.is → ip.sb 多源兜底） */
 const IP_PARSERS: IpParser[] = [
   {
     name: "ip9.com.cn",
@@ -346,62 +341,10 @@ const IP_PARSERS: IpParser[] = [
       };
     },
   },
-  {
-    name: "vore.top",
-    zh: true,
-    url: "https://api.vore.top/api/IPdata",
-    parse: (text) => {
-      const d = JSON.parse(text) as {
-        data?: {
-          ip?: unknown;
-          info1?: { country?: string; province?: string; city?: string };
-          info2?: { isp?: string };
-          info3?: { country_code?: string };
-        };
-      };
-      const data = d?.data;
-      if (typeof data?.ip !== "string" || !data.ip) throw new Error("missing ip");
-      return {
-        ip: data.ip,
-        isp: normalizeIsp(data.info2?.isp),
-        location: formatLocation(
-          data.info1?.country,
-          data.info3?.country_code,
-          data.info1?.province,
-          data.info1?.city,
-        ),
-      };
-    },
-  },
-  {
-    name: "ip.useragentinfo.com",
-    zh: true,
-    url: "https://ip.useragentinfo.com/json",
-    parse: (text) => {
-      const d = JSON.parse(text) as {
-        ip?: unknown;
-        country?: string;
-        province?: string;
-        city?: string;
-        isp?: string;
-      };
-      if (typeof d.ip !== "string" || !d.ip) throw new Error("missing ip");
-      const code = d.country ? COUNTRY_CODES[d.country] : undefined;
-      const isp = d.isp
-        ? normalizeIsp(/^中国/.test(d.isp) ? d.isp : `中国${d.isp}`)
-        : undefined;
-      return {
-        ip: d.ip,
-        isp,
-        location: formatLocation(d.country, code, d.province, d.city),
-      };
-    },
-  },
 ];
 
 async function fetchIpInfo(): Promise<IpInfo | null> {
-  // 竞速返回：接口全为中文归属地，任一成功立即返回，不再等慢接口；
-  // 若无归属地结果则等 1 秒窗口取最优；全部失败返回 null
+  // 任一源成功立即返回，不再等慢接口；结果无归属地时给 1 秒窗口取最优；全部失败返回 null
   return new Promise<IpInfo | null>((resolve) => {
     const candidates: { info: IpInfo; parserIndex: number }[] = [];
     let remaining = IP_PARSERS.length;

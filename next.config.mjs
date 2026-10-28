@@ -1,34 +1,16 @@
-import withPWAInit from "@ducanh2912/next-pwa";
+import withSerwistInit from "@serwist/next";
 
-const withPWA = withPWAInit({
-  dest: "public",
-  // 开发模式下关闭 SW，避免缓存干扰热更新
+// Serwist 取代已停止维护的 next-pwa：SW 仍由 webpack 插件在构建期产出到 public/sw.js。
+// Next 16 默认 Turbopack，webpack 插件只有 `next build --webpack` 才会执行（见 package.json）。
+const withSerwist = withSerwistInit({
+  swSrc: "src/sw.ts",
+  swDest: "public/sw.js",
+  // 开发模式下关闭 SW，避免缓存干扰热更新（与旧 next-pwa 行为一致）；
+  // 同时这也是 @serwist/next 在 Turbopack dev 下不告警的条件。
   disable: process.env.NODE_ENV === "development",
-  workboxOptions: {
-    runtimeCaching: [
-      // 解析 API 与代理：绝不在 SW 层缓存（视频流/接口不应被缓存）
-      {
-        urlPattern: ({ url }) => url.pathname.startsWith("/api/"),
-        handler: "NetworkOnly",
-        method: "GET",
-      },
-      // 页面导航：网络优先，超时回退缓存
-      {
-        urlPattern: ({ request }) => request.destination === "document",
-        handler: "NetworkFirst",
-        options: { cacheName: "pages", networkTimeoutSeconds: 10 },
-      },
-      // 静态资源：后台重新校验
-      {
-        urlPattern: ({ request }) =>
-          ["style", "script", "worker", "image", "font"].includes(
-            request.destination
-          ),
-        handler: "StaleWhileRevalidate",
-        options: { cacheName: "assets" },
-      },
-    ],
-  },
+  // 页面跳转时按需缓存，配合 SW 内的 NetworkFirst 文档策略
+  cacheOnNavigation: true,
+  reloadOnOnline: true,
 });
 
 /** @type {import('next').NextConfig} */
@@ -60,4 +42,4 @@ const nextConfig = {
   },
 };
 
-export default withPWA(nextConfig);
+export default withSerwist(nextConfig);

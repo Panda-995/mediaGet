@@ -1,7 +1,7 @@
 /**
- * 代理端点（/api/image、/api/video-proxy）安全补漏测试：
- * - SSRF：内网/云元数据地址在强拦截模式下返回 403，且不发起任何上游请求
- * - 灰度：PROXY_SSRF_STRICT 未开启时保持改造前行为（仅记录不拦截）
+ * 代理端点（/api/image、/api/video-proxy）安全测试：
+ * - SSRF：内网/云元数据地址返回 403，且不发起任何上游请求
+ * - 白名单：只中转各平台已知媒体 CDN，非白名单域一律 403（挡住开放代理/流量中转）
  * - 有界缓存：createTtlCache 的条目上限 / 过期 / LRU 热度
  * - 限流：自定义配额生效；pruneAllRateLimit 能回收一次性 IP
  */
@@ -9,6 +9,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { GET as imageGET } from "@/app/api/image/route.js";
 import { GET as videoGET } from "@/app/api/video-proxy/route.js";
 import { createTtlCache } from "@/lib/api-utils";
+import { isAllowedProxyHost } from "@/lib/proxy-guard";
 import { pruneAllRateLimit, rateLimit } from "@/lib/server-guard";
 
 const goodJpeg = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x10, 0x4a]);
@@ -20,7 +21,7 @@ function proxyRequest(path: string, url: string, extra = "") {
   );
 }
 
-describe("代理端点 SSRF 防护（强拦截模式）", () => {
+describe("代理端点 SSRF 防护", () => {
   beforeEach(() => {
     vi.stubEnv("PROXY_SSRF_STRICT", "true");
     vi.stubGlobal("fetch", vi.fn());
@@ -98,9 +99,9 @@ describe("代理端点 SSRF 防护（强拦截模式）", () => {
   });
 });
 
-describe("代理端点 SSRF 灰度（默认仅记录不拦截）", () => {
+describe("代理端点目标白名单", () => {
   beforeEach(() => {
-    vi.stubEnv("PROXY_SSRF_STRICT", "");
+    vi.stubGlobal("fetch", vi.fn());
   });
 
   afterEach(() => {
@@ -108,7 +109,45 @@ describe("代理端点 SSRF 灰度（默认仅记录不拦截）", () => {
     vi.unstubAllEnvs();
   });
 
-  it("image: 未开启强拦截时保持改造前行为（正常代理）", async () => {
+  it("image: 非平台 CDN 的公网地址返回 403，不发起上游请求", async () => {
+    const res = await imageGET(
+      proxyRequest("/api/image", "https://cdn.example.com/any.jpg")
+    );
+
+    expect(res.status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("video-proxy: 非平台 CDN 的公网地址返回 403", async () => {
+    const res = await videoGET(
+      proxyRequest("/api/video-proxy", "https://example.com/any.mp4")
+    );
+
+    expect(res.status).toBe(403);
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
+  it("匹配子域，但不匹配后缀拼接的仿冒域", () => {
+    expect(isAllowedProxyHost("sns-video-qc.xhscdn.com")).toBe(true);
+    expect(isAllowedProxyHost("XHSCDN.COM")).toBe(true);
+    expect(isAllowedProxyHost("xhscdn.com.evil.example")).toBe(false);
+    expect(isAllowedProxyHost("evil-xhscdn.com")).toBe(false);
+    expect(isAllowedProxyHost("pipedproxy.example.net")).toBe(true);
+  });
+
+  it("PROXY_ALLOWED_HOSTS 可追加自建实例域名", () => {
+    vi.stubEnv("PROXY_ALLOWED_HOSTS", "https://media.example.net, cdn2.example.org");
+    expect(isAllowedProxyHost("media.example.net")).toBe(true);
+    expect(isAllowedProxyHost("sub.cdn2.example.org")).toBe(true);
+    expect(isAllowedProxyHost("other.example.net")).toBe(false);
+  });
+
+  it("自建 YouTube 源域名自动放行", () => {
+    vi.stubEnv("YOUTUBE_INVIDIOUS_HOSTS", "https://inv.example.com");
+    expect(isAllowedProxyHost("inv.example.com")).toBe(true);
+  });
+
+  it("image: fallback 中的非白名单地址被跳过，只请求合法候选", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValue(
@@ -117,11 +156,16 @@ describe("代理端点 SSRF 灰度（默认仅记录不拦截）", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     const res = await imageGET(
-      proxyRequest("/api/image", "https://cdn.example.com/gray.jpg")
+      proxyRequest(
+        "/api/image",
+        "https://sns-img-qc.xhscdn.com/a.jpg",
+        `&fallback=${encodeURIComponent("https://cdn.example.com/a.jpg")}`
+      )
     );
 
     expect(res.status).toBe(200);
     expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toContain("xhscdn.com");
   });
 });
 

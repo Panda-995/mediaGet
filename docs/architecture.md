@@ -85,7 +85,7 @@ CORS → IP 黑名单蜜罐（`lib/honeypot.ts`）→ IP 级限流 60 次/分（
 | `@pixi/*`（app / core / display / sprite / filter-blur / filter-color-matrix / filter-bulge-pinch） | **必留** | 是 `@applemusic-like-lyrics/core` 的 **peerDependencies**（AMLL 歌词特效依赖），本项目源码 0 直接引用，删了运行时会报缺包。 |
 | `@pixi/filter-bulge-pinch@^5.1.1` | 版本数字与其余 `^7.4.3` 断裂，**不是笔误** | 上游该 filter 只发到 v5 线，AMLL peerDeps 声明为 `*`。升到 7.x 会装不上。 |
 | `clsx` + `tailwind-merge` | 都留 | shadcn/ui 标准组合，非重叠依赖，勿合并。 |
-| `@ducanh2912/next-pwa` | 必留 | PWA/SW 由 `next.config.mjs` 的 `withPWA` 生成。 |
+| `@serwist/next` | 必留 | PWA/SW 由 `next.config.mjs` 的 `withSerwistInit` 生成，SW 源码在 `src/sw.ts`；构建必须走 webpack（`next build --webpack`），Turbopack 下不产出 SW（dev 由 `disable` 关闭）。 |
 | `bowser`、`lucide-react`、`@radix-ui/*` | 使用中 | — |
 
 已清理：`audiomotion-analyzer`（功能被 `pseudo-spectrum.tsx` 原生 Canvas 实现取代，0 引用）、`playwright-core`（仅服务一次性调试脚本，脚本已删）。

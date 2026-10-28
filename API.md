@@ -520,6 +520,8 @@ GET /api/health
 
 **说明**: 返回所有解析记录（**成功与失败**）的分析结果——平台分布（含失败数）、近 14 天每日解析量、总量/成功/失败/独立访客（IP 匿名哈希）/独立链接数。数据由 `createApiHandler` 在每次解析结束（成功或失败）时异步写入 Turso（`parse_events` 表，`status` 区分 `success`/`failed`，`reason` 记录失败原因）。
 
+响应中还包含 `proxyTraffic`：`/api/image` 与 `/api/video-proxy` 的出站流量，按「天 + 端点」累计请求数与字节数（`proxy_traffic_daily` 表）。计数先在实例内存按 60 秒 / 4MB / 500 次请求的窗口聚合，再 UPSERT 落库；查询时先冲刷一次，保证刚发生的字节可见。isolate 被回收时最多丢一个窗口的计数——它用于发现「某天流量突然翻倍」这类趋势，不作账单。
+
 **响应示例**:
 ```json
 {
@@ -532,6 +534,10 @@ GET /api/health
     ],
     "byDay": [
       { "day": "2024-01-01", "total": 10, "success": 8, "failed": 2 }
+    ],
+    "proxyTraffic": [
+      { "day": "2026-10-28", "endpoint": "image", "requests": 320, "bytes": 10485760 },
+      { "day": "2026-10-28", "endpoint": "video-proxy", "requests": 26, "bytes": 734003200 }
     ]
   }
 }
@@ -940,6 +946,14 @@ POST /api/music/cache
 - **并发去重**：同一链接在解析进行中被多人同时请求时，只真实抓取一次，其余请求复用同一次解析（与缓存互补：缓存针对「已完成」的解析，去重针对「进行中」的解析）
 - 失败结果不缓存（可能是瞬时反爬），相同链接立即重试解析
 
+### 媒体代理白名单
+
+- `/api/image`、`/api/video-proxy` 只中转各平台已知媒体 CDN（抖音/字节系、快手、微博、B 站、小红书、最右、AcFun、TikTok、X、Instagram、YouTube），其余目标一律 `403`，响应体不回传目标域名，仅服务端日志记录
+- 内网 / 云元数据地址默认强拦截；`PROXY_SSRF_STRICT=false` 可回退为「仅记录不拦截」
+- 自建 Piped / Invidious 的域名随 `YOUTUBE_PIPED_HOSTS` / `YOUTUBE_INVIDIOUS_HOSTS` 自动放行，其他自建媒体域用 `PROXY_ALLOWED_HOSTS` 追加
+- 目的：这两个端点接受任意 `?url=`，开放形态等于把站点当通用下载 / 视频中转出口，既容易被盗用流量，也触及 Cloudflare 免费版对代理与非 HTML 内容的限制
+- 出站字节按「天 + 端点」累计到 `proxy_traffic_daily`（Turso），经 `/api/stats` 的 `proxyTraffic` 查看；图片另走边缘缓存（Cache API，命中时响应带 `X-Proxy-Cache: edge`），减少重复回源
+
 ### 环境变量配置
 
 如需完整功能，需配置以下环境变量：
@@ -993,6 +1007,13 @@ BILIBILI_USER_AGENT=your_user_agent
 # YOUTUBE_INVIDIOUS_HOSTS=https://inv.example.com,...
 # YOUTUBE_API_TIMEOUT_MS=5000
 # YOUTUBE_SOURCE_TIMEOUT_MS=6000
+
+# 媒体代理白名单（/api/image、/api/video-proxy）：默认只放行各平台已知媒体 CDN；
+# 自建 Piped / Invidious 的域名由上面的 YOUTUBE_*_HOSTS 自动放行，其余自建媒体域
+# 用 PROXY_ALLOWED_HOSTS 追加（逗号 / 空白分隔，可带或不带 scheme）。
+# PROXY_ALLOWED_HOSTS=https://media.example.com,cdn.example.org
+# SSRF 内网拦截默认开启；PROXY_SSRF_STRICT=false 可回退为「仅记录不拦截」
+# PROXY_SSRF_STRICT=true
 
 # 音乐聚合上游（/api/music，GD 契约）：MUSIC_API_BASES（逗号 / 空白分隔，按序回退）
 # 优先于单基址 MUSIC_API_BASE；不配置时默认公共实例 music-api.gdstudio.xyz

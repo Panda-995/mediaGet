@@ -1,4 +1,4 @@
-# mediaGet 二次开发路线图
+# MadiaGet 二次开发路线图
 
 > 部署目标：**Vercel**（Node.js runtime，无平台限制）
 > 开发方向：前端 UI 改版（品牌 / 主题 / 多语言 / 移动端）+ 功能增强（批量解析 / 收藏夹 / 下载管理 / 音频提取 / 历史记录）
@@ -101,7 +101,7 @@
 ### Phase 6 — 移动端体验优化与 PWA
 **目标**：移动端打磨 + 可安装 PWA。
 - [ ] 移动端触控优化、结果卡片移动布局、底部操作栏
-- [ ] PWA 完善（已有 `@ducanh2912/next-pwa` + manifest：补图标、离线缓存、安装提示）
+- [ ] PWA 完善（已有 `@serwist/next` + manifest：补图标、离线缓存、安装提示）
 - [ ] Lighthouse 性能优化
 
 **验收**：移动端 Lighthouse PWA 达标。

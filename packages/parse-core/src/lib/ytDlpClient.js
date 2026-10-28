@@ -5,15 +5,34 @@
  * 非 Docker 环境调用方会收到 YTDLP_NOT_FOUND 错误并转为明确提示。
  */
 
-import { spawn } from "child_process";
 import { getConfigOrEnv } from "../config";
 
 // 支持 YTDLP_BIN 含参数（如 "python3 -m yt_dlp"），默认走 PATH 里的 yt-dlp
 const YTDLP_CMD = String(getConfigOrEnv("ytdlpBin", "YTDLP_BIN", "yt-dlp")).trim().split(/\s+/);
 const YTDLP_TIMEOUT_MS = Number(getConfigOrEnv("ytdlpTimeoutMs", "YTDLP_TIMEOUT_MS", 25000));
 
+/**
+ * 惰性加载 child_process：
+ * - Docker 部署有真实子进程能力；
+ * - Cloudflare Workers 只有 child_process 桩（可导入、调用即抛），且模块本身
+ *   受 compat 开关约束。动态 import 让「不支持子进程」只在这里降级为
+ *   YTDLP_NOT_FOUND，而不是整个路由模块加载失败。
+ */
+async function loadSpawn() {
+  try {
+    const { spawn } = await import("node:child_process");
+    if (typeof spawn === "function") return spawn;
+  } catch {
+    // 落到下面统一报错
+  }
+  throw new Error(
+    "YTDLP_NOT_FOUND: 当前运行时不支持子进程（Cloudflare Workers 无 yt-dlp，TikTok 仅 Docker 部署可用）"
+  );
+}
+
 /** 运行 yt-dlp 并返回 stdout；错误时抛 Error（含分类前缀） */
-export function runYtDlp(args, timeoutMs = YTDLP_TIMEOUT_MS) {
+export async function runYtDlp(args, timeoutMs = YTDLP_TIMEOUT_MS) {
+  const spawn = await loadSpawn();
   return new Promise((resolve, reject) => {
     let child;
     try {

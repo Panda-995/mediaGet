@@ -1,0 +1,19 @@
+# wrangler dev / preview 的本地环境变量（复制为 .dev.vars，已被 .gitignore 忽略）
+# 生产环境用 `npx wrangler secret put <NAME>` 注入，勿提交真实值。
+
+NEXTJS_ENV=development
+
+# 媒体代理：默认只放行各平台已知 CDN，自建媒体域用 PROXY_ALLOWED_HOSTS 追加
+# PROXY_ALLOWED_HOSTS=https://media.example.com
+# PROXY_SSRF_STRICT=false
+
+# 可选：敏感 Cookie 与存储
+# DOUYIN_COOKIE=
+# BILIBILI_COOKIE=
+# XHS_COOKIE=
+# KUAISHOU_COOKIE=
+# IG_COOKIE=
+# TURSO_DB_URL=
+# TURSO_AUTH_TOKEN=
+# SETTINGS_API_KEY=
+# SETTINGS_SESSION_SECRET=

@@ -19,6 +19,13 @@
 
 # OpenNext Cloudflare 构建产物（push 由 CI 构建生成）
 /.open-next/
+# wrangler 本地状态与变量（secrets 走 wrangler secret，本地副本不入库）
+/.wrangler/
+/.dev.vars
+# OpenNext 构建的临时目录（Windows 下 %TEMP% 写权限受限时改用项目内目录）
+/.tmp-opennext/
+# Netlify CLI 本地状态（部署配置 netlify.toml 本身入库）
+/.netlify/
 
 # production
 /build

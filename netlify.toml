@@ -1,0 +1,36 @@
+# Netlify 部署配置（Next.js Runtime v5，底层同为 OpenNext 思路）
+#
+# 能力边界（详见 CLAUDE.md「部署」）：
+# - 解析接口可用，但同步函数默认 10s 超时（Pro 最高 26s），Instagram / YouTube / B站重试链路易超时；
+# - 同步响应体上限 6MB，/api/video-proxy 的大视频会被截断，Range 透传不保证；
+# - 无子进程，TikTok 不可用（与 Cloudflare Workers 相同）；
+# - 无 Cloudflare Cache API，解析结果缓存退化为进程内 Map（不影响正确性，跨实例不共享）。
+# 生产通道仍是 Docker / Cloudflare Workers，这里是备用与演示。
+
+[build]
+  # 必须走 npm run build：其中固定了 --webpack（Serwist 生成 SW 依赖 webpack 插件）
+  command = "npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+
+# Next.js Runtime 插件通常由 Netlify 自动安装；如需锁定版本，改为
+# npm i -D @netlify/plugin-nextjs@5.16.4 后它会优先使用 package.json 里的版本。
+[[plugins]]
+  package = "@netlify/plugin-nextjs"
+
+# Service Worker 必须每次回源校验，否则新版本 SW 可能迟迟不接管
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+[[headers]]
+  for = "/manifest.webmanifest"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+# 敏感变量（DOUYIN_COOKIE / BILIBILI_COOKIE / XHS_COOKIE / IG_COOKIE /
+# TURSO_DB_URL / TURSO_AUTH_TOKEN / SETTINGS_API_KEY 等）在
+# Site settings → Environment variables 里配置，不要写进本文件。

@@ -21,13 +21,113 @@ import { getClientIP, isBlockedIP, rateLimit } from "@/lib/server-guard";
 export const PROXY_RATE_LIMIT_MAX = 300;
 
 /**
- * SSRF 强拦截灰度开关。
- * 加防护会改变现有行为：若前端图床/视频 CDN 恰好落在内网网段，强拦截会直接 403。
- * 因此默认「仅记录不拦截」，观察 1~2 天日志确认无业务误伤后，
- * 再设置环境变量 PROXY_SSRF_STRICT=true 切换为强拦截。
+ * SSRF 内网拦截。默认开启；PROXY_SSRF_STRICT=false 可回退为「仅记录不拦截」。
+ * 白名单上线后它已不是唯一闸门，保留它挡住「白名单域被解析到内网」的情形。
  */
 function isSsrfStrict() {
-  return String(process.env.PROXY_SSRF_STRICT || "").toLowerCase() === "true";
+  return String(process.env.PROXY_SSRF_STRICT ?? "").toLowerCase() !== "false";
+}
+
+/**
+ * 允许中转的目标域（精确匹配或子域匹配）。
+ *
+ * 这两个端点接受任意 `?url=`，等于把站点当通用 CDN 出口：转发视频、图片等非 HTML
+ * 内容正是 Cloudflare 免费版限制的滥用形态，也容易被拿去当爬虫/下载中转。
+ * 因此收紧到各平台已知的媒体 CDN 家族；新增平台或自建 YouTube 源时用
+ * PROXY_ALLOWED_HOSTS 追加（逗号/空白分隔，可带或不带 scheme）。
+ */
+const MEDIA_HOST_SUFFIXES = [
+  // 字节系：抖音 / 西瓜 / 汽水音乐 / TikTok
+  "douyin.com",
+  "iesdouyin.com",
+  "douyinvod.com",
+  "douyinpic.com",
+  "douyinstatic.com",
+  "snssdk.com",
+  "ixigua.com",
+  "ixiguavideo.com",
+  "toutiaoimg.com",
+  "pstatp.com",
+  "byteimg.com",
+  "tiktok.com",
+  "tiktokv.com",
+  "tiktokcdn.com",
+  "tiktokcdn-us.com",
+  "ibyteimg.com",
+  // 快手
+  "kuaishou.com",
+  "yximgs.com",
+  "kwimgs.com",
+  "kwaicdn.com",
+  // 微博
+  "weibocdn.com",
+  "sinaimg.cn",
+  // 哔哩哔哩
+  "bilibili.com",
+  "hdslb.com",
+  "biliimg.com",
+  "bilivideo.com",
+  "b23.tv",
+  // 小红书
+  "xiaohongshu.com",
+  "xhscdn.com",
+  // 最右
+  "izuiyou.com",
+  "xiaochuankeji.cn",
+  // AcFun
+  "acfun.cn",
+  "acfun.com",
+  "aixifan.com",
+  // X / Instagram / YouTube
+  "twimg.com",
+  "cdninstagram.com",
+  "fbcdn.net",
+  "instagram.com",
+  "ytimg.com",
+  "ggpht.com",
+  "googleusercontent.com",
+  "googlevideo.com",
+];
+
+/**
+ * 额外放行：PROXY_ALLOWED_HOSTS + 自建 YouTube 源。
+ * Piped / Invidious 实例的媒体由实例自身域名提供，自托管时必须一并放行，
+ * 否则「直链播放/下载」在自建源下会被白名单拦掉。
+ */
+function extraAllowedHosts() {
+  const hosts = [];
+  for (const raw of [
+    process.env.PROXY_ALLOWED_HOSTS,
+    process.env.YOUTUBE_PIPED_HOSTS,
+    process.env.YOUTUBE_INVIDIOUS_HOSTS,
+  ]) {
+    if (!raw) continue;
+    for (const item of raw.split(/[,\s]+/)) {
+      if (!item) continue;
+      try {
+        const url = new URL(/^https?:\/\//i.test(item) ? item : `https://${item}`);
+        hosts.push(url.hostname.toLowerCase());
+      } catch {
+        // 非法项忽略：白名单只做收紧，配置写错不该让整个端点不可用
+      }
+    }
+  }
+  return hosts;
+}
+
+/**
+ * 目标主机是否允许中转。
+ * @param {string} hostname
+ * @returns {boolean}
+ */
+export function isAllowedProxyHost(hostname) {
+  if (!hostname) return false;
+  const host = String(hostname).toLowerCase().replace(/\.$/, "");
+  // Piped 的流媒体代理域形态不固定（pipedproxy.xxx / pipedproxy-xxx.xxx）
+  if (host.includes("pipedproxy")) return true;
+  return [...MEDIA_HOST_SUFFIXES, ...extraAllowedHosts()].some(
+    (domain) => host === domain || host.endsWith(`.${domain}`)
+  );
 }
 
 /**
@@ -65,10 +165,22 @@ export function guardProxyRequest(request, label) {
  * @returns {Response|null} 非 null 表示该 URL 不可用（强拦截时）
  */
 export function checkProxyUrl(url, label, clientIP) {
-  if (sanitizeUrl(url)) return null;
+  const sanitized = sanitizeUrl(url);
+  if (!sanitized) {
+    logger.warn(`代理端点 SSRF 拦截(${label}): ip=${clientIP ?? "unknown"}`);
+    if (!isSsrfStrict()) return null;
+    return new Response("Forbidden", { status: 403 });
+  }
 
-  logger.warn(`代理端点 SSRF 拦截(${label}): ip=${clientIP ?? "unknown"}`);
-  // 灰度期：只记录不拦截，保持改造前的行为
-  if (!isSsrfStrict()) return null;
+  // 白名单越界：不把目标域写进响应体（与 SSRF 拦截同一口径），只记日志
+  let hostname = "";
+  try {
+    hostname = new URL(sanitized).hostname;
+  } catch {
+    // sanitizeUrl 已解析成功，这里失败按不可信处理
+  }
+  if (isAllowedProxyHost(hostname)) return null;
+
+  logger.warn(`代理端点目标不在白名单(${label}): host=${hostname || "unknown"}`);
   return new Response("Forbidden", { status: 403 });
 }

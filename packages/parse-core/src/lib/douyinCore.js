@@ -4,7 +4,6 @@ import { logger, beijingNow } from "./api-utils";
 import { douyinPublicFallback } from "./douyinFallback";
 import { sleep } from "./anti-bot";
 import { guardedFetch } from "../runtime";
-import { request as httpsRequest } from "node:https";
 import { getConfigOrEnv } from "../config";
 import {
   hasValidData,
@@ -536,7 +535,11 @@ async function resolveHostViaDoh(hostname) {
  * 指定 IP 直连的 HTTPS GET（绕过系统 DNS 污染）：host/servername 用真实域名
  * 保证 SNI 与 Host 正确，仅消费响应头即可 —— 抖音短链用 302 返回 Location。
  */
-function httpsGetViaIp(hostname, ip, pathname, headers) {
+async function httpsGetViaIp(hostname, ip, pathname, headers) {
+  // 惰性加载 node:https：Workers 的 node:http(s) 客户端要求 compat date ≥ 2025-08-15
+  // （见 wrangler.toml），且其实现基于 fetch，host 指向 IP 时 Host 头可能被丢弃。
+  // 这条只是 DNS 污染兜底，拿不到就抛给调用方（调用方已 catch 并回退常规路径）。
+  const { request: httpsRequest } = await import("node:https");
   return new Promise((resolve, reject) => {
     const req = httpsRequest(
       {

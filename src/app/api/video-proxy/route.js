@@ -24,6 +24,7 @@ export const runtime = "nodejs";
 import { logger } from "@/lib/api-utils";
 import { getClientIP } from "@/lib/server-guard";
 import { checkProxyUrl, guardProxyRequest } from "@/lib/proxy-guard";
+import { recordProxyTraffic } from "@/lib/proxy-traffic";
 
 function isXhsHost(hostname) {
   return hostname === "xhscdn.com" || hostname.endsWith(".xhscdn.com");
@@ -219,14 +220,18 @@ export async function GET(request) {
     );
   };
   armIdleTimer();
+  // 出站字节：传输中累加，正常结束（flush）时记一笔代理流量
+  let sentBytes = 0;
   const bodyGuard = new TransformStream({
     transform(chunk, controller) {
       clearTimeout(timer);
       armIdleTimer();
+      sentBytes += chunk?.byteLength || 0;
       controller.enqueue(chunk);
     },
     flush() {
       clearTimeout(timer);
+      recordProxyTraffic("video-proxy", sentBytes);
     },
   });
 

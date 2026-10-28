@@ -1,19 +1,46 @@
-# Cloudflare Workers 部署配置（OpenNext 方案，替代原 next-on-pages）
-# 构建：npm run build:cf → 产出 .open-next/ 目录（供 Cloudflare Git 集成构建使用）
-# 自动部署：Dashboard 关联本仓库后，Build command=npm run build:cf，
-# Deploy command=npx wrangler deploy；每次 push 到 main 由 Cloudflare 自动构建部署
-name = "hotier-parse"
+# Cloudflare Workers 部署配置（OpenNext 官方方案）
+#
+# 构建：npm run build:cf   → 产出 .open-next/worker.js + .open-next/assets
+# 本地：npm run preview:cf → 用 workerd 跑真实 Workers 运行时（不是 next dev）
+# 上线：npm run deploy:cf（或 GitHub Actions 的 deploy-cloudflare.yaml）
+# Workers Builds（Git 集成）亦可：Build command = npm run build:cf，Deploy command = npx wrangler deploy
+# name 必须与 Cloudflare 侧实际 Worker 同名：Workers Builds 会用它建立服务绑定、
+# 绑定域名与 secrets；名字不一致时 CI 会强制覆盖并在部署时报 10143。
+name = "mediaget"
 main = ".open-next/worker.js"
-compatibility_date = "2025-08-14"
-compatibility_flags = ["nodejs_compat"]
+
+# 兼容日期按「内核实际用到的 Node API」取：
+# - 2025-08-15 起 node:http(s) 客户端随 nodejs_compat 自动启用（抖音 DoH 兜底用 node:https）
+# - 2026-03-17 起 workerd 提供 child_process 桩（可导入、调用即抛，TikTok 据此给出明确降级提示）
+# 降低日期会分别丢掉这两项；调高无额外依赖，故锁定到最新所需日期。
+compatibility_date = "2026-03-17"
+compatibility_flags = ["nodejs_compat", "global_fetch_strictly_public"]
 
 [assets]
 directory = ".open-next/assets"
 binding = "ASSETS"
 
-# 非敏感环境变量（DOUYIN_COOKIE / WEIBO_COOKIE / BILIBILI_COOKIE 等敏感值
-# 在 Worker 的 Settings → Variables and Secrets 中添加，不写入本文件）
+# 不配置 WORKER_SELF_REFERENCE：本站无 ISR / 增量缓存 / tag 失效（见 open-next.config.ts），
+# 该自引用绑定只在 OpenNext 的缓存再验证路径上用到，未启用时纯属多余，且要求 service
+# 名称与部署目标完全一致——名字一旦不同，首次部署会直接失败（error 10143）。
+# 日后启用 ISR / tag 失效时再加：
+# [[services]]
+# binding = "WORKER_SELF_REFERENCE"
+# service = "mediaget"
+
+# wrangler dev / deploy 的请求日志（Workers Logs）
+[observability]
+enabled = true
+
+# 非敏感环境变量。敏感值（Cookie / Turso Token / SETTINGS_API_KEY 等）
+# 用 `npx wrangler secret put <NAME>` 写入，或用 Dashboard 的 Variables and Secrets，
+# 不写入本文件。完整清单见 CLAUDE.md「环境变量」。
 [vars]
 BILIBILI_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 # 功能开关：视频解析入口（/api/config 读取；值为 "true" 时放开）
 VIDEO_PARSE_ENABLED = "true"
+
+# 自定义域名示例（按需启用）
+# [[routes]]
+# pattern = "parse.example.com"
+# custom_domain = true

@@ -1,4 +1,5 @@
 import { queryStats } from "@/lib/analytics";
+import { flushProxyTraffic, queryProxyTraffic } from "@/lib/proxy-traffic";
 import { getCorsHeaders } from "@/lib/server-guard";
 
 export const runtime = "nodejs";
@@ -35,5 +36,12 @@ export async function GET(request) {
     );
   }
 
-  return Response.json({ code: 200, msg: "ok", data: stats }, { headers: corsHeaders });
+  // 代理流量在内存里按窗口聚合，查询前先落库一次，避免刚发生的字节看不到
+  await flushProxyTraffic();
+  const proxyTraffic = (await queryProxyTraffic()) || [];
+
+  return Response.json(
+    { code: 200, msg: "ok", data: { ...stats, proxyTraffic } },
+    { headers: corsHeaders }
+  );
 }
