@@ -14,7 +14,6 @@
 </p>
 
 <p align="center">
-  <a href="https://get.hotier.cc.cd">在线体验</a> ·
   <a href="API.md">接口文档</a> ·
   <a href="#支持平台">支持平台</a> ·
   <a href="#部署">部署</a>
@@ -50,7 +49,7 @@
 **站点**
 
 - 深浅色主题、移动端适配、刷新不丢解析结果、PWA 可安装
-- 提供 [常见问题](https://get.hotier.cc.cd/faq) 与 [隐私](https://get.hotier.cc.cd/legal/privacy) / [条款](https://get.hotier.cc.cd/legal/terms) / [DMCA](https://get.hotier.cc.cd/legal/dmca) 页面
+- 提供常见问题与隐私 / 条款 / DMCA 页面
 
 ## 支持平台
 
@@ -92,7 +91,7 @@
 
 **方式A：GitHub Actions 部署（推荐）**
 
-仓库自带 `.github/workflows/deploy-cloudflare.yaml`，不需要 Workers Builds 权限，只用 Cloudflare API 发布：
+<a href=".github/workflows/deploy-cloudflare.yaml"><img src="https://cdn.simpleicons.org/githubactions/2088FF" height="16" align="absmiddle" alt="GitHub Actions" /> <code>deploy-cloudflare</code></a>，不需要 Workers Builds 权限，只用 Cloudflare API 发布：
 
 1. 在 **Settings → Secrets and variables → Actions** 配置 `CF_API_TOKEN`（权限 Workers Scripts:Edit）、`CF_ACCOUNT_ID`
 2. 到 Actions 页手动运行 **Deploy to Cloudflare Workers**，首次运行会自动创建 Worker
@@ -159,7 +158,6 @@ docker run -d --name mediaget --restart unless-stopped --init \
 ## 文档与反馈
 
 - [接口文档](API.md)：请求参数、响应结构、错误码
-- [常见问题](https://get.hotier.cc.cd/faq)
 - [问题反馈](https://github.com/hotier/mediaGet/issues)
 
 ## 许可证
