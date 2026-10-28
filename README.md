@@ -91,7 +91,7 @@
 
 **方式A：GitHub Actions 部署（推荐）**
 
-<a href="../../actions/workflows/deploy-cloudflare.yaml"><img src="https://cdn.simpleicons.org/githubactions/2088FF" height="16" align="absmiddle" alt="GitHub Actions" /> <code>deploy-cloudflare</code></a>，不需要 Workers Builds 权限，只用 Cloudflare API 发布：
+<a href="../../actions/workflows/deploy-cloudflare.yaml"><img src="https://img.shields.io/badge/Cloudflare_Workers-Deploy-F38020?logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare Workers" height="26" align="absmiddle" /></a>，不需要 Workers Builds 权限，只用 Cloudflare API 发布：
 
 1. 在 **Settings → Secrets and variables → Actions** 配置 `CF_API_TOKEN`（权限 Workers Scripts:Edit）、`CF_ACCOUNT_ID`
 2. 到 Actions 页手动运行 **Deploy to Cloudflare Workers**，首次运行会自动创建 Worker
