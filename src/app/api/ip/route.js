@@ -113,8 +113,9 @@ function firstNonNull(promises) {
 }
 
 /**
- * 降级接口：pconline（太平洋网络），携带用户 IP 查询
- * 返回 {ip, pro, city, addr}，编码为 GBK，需手动解码
+ * 主数据源：pconline（太平洋网络），携带用户 IP 查询
+ * 返回 {ip, pro, city, addr}，编码为 GBK，需手动解码。
+ * 仅对大陆 IP 给省市；境外 IP 返回 err=noprovince、pro/city 为空，此时不要谎报国家。
  */
 async function fetchPconline(ip) {
   const url = `https://whois.pconline.com.cn/ipJson.jsp?ip=${encodeURIComponent(ip)}&json=true`;
@@ -130,14 +131,72 @@ async function fetchPconline(ip) {
   const text = new TextDecoder("gbk").decode(buf);
   const d = JSON.parse(text);
   if (!d?.ip) throw new Error("pconline missing ip");
+  // err=noprovince 表示查不到大陆省市（境外 IP），国家字段交由境外源补
+  const mainland = Boolean(d.pro || d.city) && d.err !== "noprovince";
   return {
     ip: d.ip,
-    country: "中国",
-    country_code: "cn",
-    prov: d.pro,
-    city: d.city,
+    country: mainland ? "中国" : undefined,
+    country_code: mainland ? "cn" : undefined,
+    prov: d.pro || undefined,
+    city: d.city || undefined,
     isp: normalizeIsp(extractIspFromAddr(d.addr, d.pro, d.city)),
   };
+}
+
+/** 境外兜底：ipwho.is，lang=zh-CN 直接返回中文国家/地区/省市 */
+async function fetchIpWho(ip) {
+  const res = await fetch(`https://ipwho.is/${encodeURIComponent(ip)}?lang=zh-CN`, {
+    signal: AbortSignal.timeout(TIMEOUT.XS),
+    headers: { "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`ipwho.is bad status ${res.status}`);
+  const d = await res.json();
+  if (d?.success === false || !d?.ip) throw new Error("ipwho.is lookup failed");
+  return {
+    ip: d.ip,
+    country: d.country || undefined,
+    country_code:
+      typeof d.country_code === "string" ? d.country_code.toLowerCase() : undefined,
+    prov: d.region || undefined,
+    city: d.city || undefined,
+    isp: d.connection?.isp || d.connection?.org || undefined,
+  };
+}
+
+/** 境外兜底第二源：ip.sb（英文） */
+async function fetchIpSb(ip) {
+  const res = await fetch(`https://api.ip.sb/geoip/${encodeURIComponent(ip)}`, {
+    signal: AbortSignal.timeout(TIMEOUT.XS),
+    headers: { "User-Agent": UA },
+  });
+  if (!res.ok) throw new Error(`ip.sb bad status ${res.status}`);
+  const d = await res.json();
+  if (!d?.ip) throw new Error("ip.sb lookup failed");
+  return {
+    ip: d.ip,
+    country: d.country || undefined,
+    country_code:
+      typeof d.country_code === "string" ? d.country_code.toLowerCase() : undefined,
+    prov: d.region || undefined,
+    city: d.city || undefined,
+    isp: d.isp || d.organization || undefined,
+  };
+}
+
+/**
+ * 按客户端 IP 查归属地：pconline 对大陆 IP 的省市 / 运营商粒度最好；
+ * 它给出 noprovince（境外 IP）时改走 ipwho.is → ip.sb，避免把境外 IP 报成「中国」。
+ */
+async function lookupByIp(ip) {
+  const local = await fetchPconline(ip).catch(() => null);
+  if (local?.prov || local?.city) return local;
+
+  const overseas =
+    (await fetchIpWho(ip).catch(() => null)) ??
+    (await fetchIpSb(ip).catch(() => null));
+  if (overseas) return { ...overseas, isp: overseas.isp || local?.isp };
+  if (local) return local;
+  throw new Error("ip geo lookup failed");
 }
 
 /**
@@ -171,7 +230,7 @@ export async function GET(request) {
     let data;
     if (clientIp) {
       // 拿到用户真实 IP，直接按 IP 查询归属地，避免查到服务器出口 IP（如 Vercel 美国节点）
-      data = await fetchPconline(clientIp);
+      data = await lookupByIp(clientIp);
     } else {
       // 无代理头（如本地开发直连），服务端请求 ip9 返回的即用户出口 IP
       try {
@@ -180,7 +239,7 @@ export async function GET(request) {
         logger.warn("ip9.com.cn failed, fallback to pconline:", error?.message || "unknown");
         // 先用纯 IP 接口拿到公网 IP，再带 IP 查询归属地
         const ip = await fetchPublicIp();
-        data = await fetchPconline(ip);
+        data = await lookupByIp(ip);
       }
     }
 
