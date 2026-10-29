@@ -868,39 +868,66 @@ export async function twitterParse(shareUrl) {
   return parseVideoId(tweetId);
 }
 
+/** 探针的两套请求头：纯 UA / 拟浏览器，用来区分「服务端拒绝该出口」与「缺头被拦」 */
+const PROBE_HEADER_PROFILES = {
+  plain: { "User-Agent": "Mozilla/5.0" },
+  browser: {
+    "User-Agent":
+      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+    Accept: "application/json,text/plain,*/*",
+    "Accept-Language": "en-US,en;q=0.9",
+    Referer: "https://fxtwitter.com/",
+  },
+};
+
+function probePath(host) {
+  if (IS_VXTWITTER(host)) return "i/status/1";
+  return host === "api.fxtwitter.com" ? "2/status/1" : "status/1";
+}
+
+async function probeOne(host, headers, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`https://${host}/${probePath(host)}`, {
+      headers,
+      signal: controller.signal,
+    });
+    const out = { host, status: res.status };
+    // WAF 挑战/拦截的指纹：cf-mitigated 或非服务自身的错误页
+    const mitigated = res.headers.get("cf-mitigated");
+    if (mitigated) out.cfMitigated = mitigated;
+    const server = res.headers.get("server");
+    if (server) out.server = server;
+    if (res.status >= 400) {
+      out.snippet = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
+    }
+    return out;
+  } catch (e) {
+    return {
+      host,
+      error: String(e?.name || e?.message || "fetch failed").slice(0, 80),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * fixer 主机可达性探针（部署排障用，挂 /api/health?probe=twitter）。
  *
  * 背景：X 的 fixer 通道全部静默失败时，解析会退到官方 syndication，敏感推文只能拿到
  * tombstone（「已删除或不可见」）——从结果本身看不出是「fixer 挂了」还是「推文真没了」。
- * 这里逐主机发一次无效 ID 的请求，只回传 HTTP 状态/错误名，不回传任何推文数据。
+ * 这里逐主机发一次无效 ID 的请求，回传状态码、WAF 指纹与错误页片段，不含任何推文数据。
+ * 两套请求头并列上报：某些 fixer 前置 WAF 会按出口 ASN/指纹拦截，改头能过就说明是这一层。
  */
 export async function probeFixerHosts(timeoutMs = 5000) {
-  return Promise.all(
-    FIXER_HOSTS.map(async (host) => {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), timeoutMs);
-      const path = IS_VXTWITTER(host)
-        ? "i/status/1"
-        : host === "api.fxtwitter.com"
-          ? "2/status/1"
-          : "status/1";
-      try {
-        const res = await fetch(`https://${host}/${path}`, {
-          headers: { "User-Agent": "Mozilla/5.0" },
-          signal: controller.signal,
-        });
-        return { host, status: res.status };
-      } catch (e) {
-        return {
-          host,
-          error: String(e?.name || e?.message || "fetch failed").slice(0, 80),
-        };
-      } finally {
-        clearTimeout(timer);
-      }
-    })
-  );
+  const variants = [];
+  for (const [variant, headers] of Object.entries(PROBE_HEADER_PROFILES)) {
+    const hosts = await Promise.all(FIXER_HOSTS.map((host) => probeOne(host, headers, timeoutMs)));
+    variants.push({ variant, hosts });
+  }
+  return variants;
 }
 
 // 导出纯函数供单元测试使用（不参与对外 API 面）

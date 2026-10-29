@@ -1067,18 +1067,29 @@ describe("probeFixerHosts：部署排障探针", () => {
 
   it("逐主机回传状态码/错误名，单主机失败不影响其它主机", async () => {
     const seen: string[] = [];
-    vi.stubGlobal("fetch", async (url: string) => {
+    const headers: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
       seen.push(url);
+      headers.push(new Headers(init?.headers).get("accept-language"));
       if (url.includes("fixupx")) throw new TypeError("fetch failed");
-      return new Response("{}", { status: 404 });
+      return new Response("{}", { status: 404, headers: { "cf-mitigated": "challenge" } });
     });
 
-    type Probe = { host: string; status?: number; error?: string };
-    const hosts = (await probeFixerHosts(1000)) as Probe[];
-    expect(hosts).toHaveLength(4);
-    const byHost = Object.fromEntries(hosts.map((h) => [h.host, h]));
-    expect(byHost["api.fxtwitter.com"].status).toBe(404);
-    expect(byHost["api.fixupx.com"].error).toBe("TypeError");
+    type Probe = {
+      variant: string;
+      hosts: { host: string; status?: number; error?: string; cfMitigated?: string }[];
+    };
+    const variants = (await probeFixerHosts(1000)) as Probe[];
+    expect(variants.map((v) => v.variant)).toEqual(["plain", "browser"]);
+    for (const v of variants) expect(v.hosts).toHaveLength(4);
+
+    const plain = Object.fromEntries(variants[0].hosts.map((h) => [h.host, h]));
+    expect(plain["api.fxtwitter.com"].status).toBe(404);
+    expect(plain["api.fxtwitter.com"].cfMitigated).toBe("challenge");
+    expect(plain["api.fixupx.com"].error).toBe("TypeError");
+    // 两套请求头各发一轮：browser 档必须带上 Accept-Language，plain 档不带
+    expect(headers[0]).toBeNull();
+    expect(headers).toContain("en-US,en;q=0.9");
     expect(seen).toContain("https://api.fxtwitter.com/2/status/1");
     expect(seen).toContain("https://api.vxtwitter.com/i/status/1");
   });
