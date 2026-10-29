@@ -1,5 +1,5 @@
 "use client";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { ApiResponse, ParseData } from "@/types/api";
 import { formatCount } from "@/lib/format";
 import VideoPosterCard from "./VideoPosterCard";
@@ -58,13 +58,12 @@ export default function DouyinVideo({ data }: DouyinVideoProps) {
             {douyinData.avatar && (
               <div className="relative flex-shrink-0">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#fe2c55] to-[#ff6b8a] blur-sm opacity-50" />
-                <Image
+                <ProxiedImage
                   src={douyinData.avatar}
                   alt={douyinData.author || ""}
                   width={56}
                   height={56}
                   className="relative rounded-full border-2 border-glass-3"
-                  unoptimized
                 />
               </div>
             )}
@@ -158,14 +157,13 @@ export default function DouyinVideo({ data }: DouyinVideoProps) {
               target="_blank"
               rel="noopener noreferrer"
               className="block rounded-xl overflow-hidden bg-black">
-              <Image
+              <ProxiedImage
                 src={images[0]}
                 alt={douyinData.title || "图片"}
                 width={864}
                 height={1920}
                 className="w-full h-auto rounded-xl"
                 priority
-                unoptimized
               />
             </a>
           ) : (
@@ -180,13 +178,12 @@ export default function DouyinVideo({ data }: DouyinVideoProps) {
                     selected={gallerySel.isSelected(index)}
                     onToggle={() => gallerySel.toggle(index)}
                     className="relative aspect-[3/4] rounded-xl overflow-hidden group block bg-black">
-                    <Image
+                    <ProxiedImage
                       src={imageUrl}
                       alt={`${douyinData.title || "图片"} ${index + 1}`}
                       fill
                       sizes="(max-width: 640px) 50vw, 33vw"
                       className="object-cover transition-transform duration-500 group-hover:scale-[1.02]"
-                      unoptimized
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </SelectableImageLink>

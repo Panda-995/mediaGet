@@ -1,7 +1,7 @@
 {
   "name": "madiaget",
   "version": "0.1.24",
-  "description": "MadiaGet —— 短视频 / 图文 / 音乐统一解析下载站，粘贴分享链接或整段分享文案即得无水印直链。",
+  "description": "MediaGet —— 短视频 / 图文 / 音乐统一解析下载站，粘贴分享链接或整段分享文案即得无水印直链。",
   "keywords": [
     "video-parser",
     "video-downloader",

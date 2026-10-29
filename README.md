@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="public/icon.svg" width="72" height="72" alt="MadiaGet" />
+  <img src="public/icon.png" width="72" height="72" alt="MediaGet" />
 </p>
 
-<h1 align="center">即刻解析 · MadiaGet</h1>
+<h1 align="center">MediaGet</h1>
 
 <p align="center">短视频解析 + 音乐解析下载服务：粘贴分享链接或整段分享文案，即得无水印直链。</p>
 
@@ -21,7 +21,7 @@
 
 > **免责声明**：本项目仅用于技术学习与搜索聚合演示，不存储、不传播任何受版权保护的内容，请勿用于商业或侵权用途。
 
-## 为什么是 MadiaGet
+## 为什么是 MediaGet
 
 - **一条链接出结果**：视频、图文、音乐统一解析，自动识别平台与内容类型
 - **不用手动挑链接**：整段分享文案直接粘贴，自动提取有效地址
@@ -87,11 +87,9 @@
 
 ### Cloudflare Workers
 
-  <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/hotier/mediaGet"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" height="32" /></a>
-
 **方式A：GitHub Actions 部署（推荐）**
 
-<a href=".github/workflows/deploy-cloudflare.yaml"><img src="https://cdn.simpleicons.org/githubactions/2088FF" height="16" align="absmiddle" alt="GitHub Actions" /> <code>deploy-cloudflare</code></a>，不需要 Workers Builds 权限，只用 Cloudflare API 发布：
+<a href="../../actions/workflows/deploy-cloudflare.yaml"><img src="https://img.shields.io/badge/Cloudflare_Workers-Deploy-F38020?logo=cloudflare&logoColor=white" alt="Deploy to Cloudflare Workers" height="26" align="absmiddle" /></a>
 
 1. 在 **Settings → Secrets and variables → Actions** 配置 `CF_API_TOKEN`（权限 Workers Scripts:Edit）、`CF_ACCOUNT_ID`
 2. 到 Actions 页手动运行 **Deploy to Cloudflare Workers**，首次运行会自动创建 Worker
@@ -101,6 +99,8 @@
 构建校验已在 CI 中完成，该工作流只负责发布。
 
 **方式B：控制台 Git 集成**
+
+ <a href="https://deploy.workers.cloudflare.com/?url=https://github.com/hotier/mediaGet"><img src="https://deploy.workers.cloudflare.com/button" alt="Deploy to Cloudflare" height="32" /></a>
 
 需要账户具备 Workers Builds 权限，否则面板会提示 `Your account is blocked from using Workers Builds`。
 

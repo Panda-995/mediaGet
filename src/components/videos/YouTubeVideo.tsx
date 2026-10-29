@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import Image, { type ImageProps } from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { Download, ExternalLink, Music, Pause, Play, X } from "lucide-react";
 import { ApiResponse, ParseData } from "@/types/api";
 import { formatCount } from "@/lib/format";
@@ -45,34 +45,7 @@ const YT_GRADIENT = "from-[#FF0000] to-[#ff4d4d]";
  * YouTube 头像与封面均为 Google 图床（yt3.ggpht.com / i.ytimg.com 等），国内网络
  * 直连常被阻断 —— 一律先经 /api/image 服务端转发加载（Vercel 等海外部署可达上游，
  * 路由自带 6h LRU 缓存与防盗链 Referer 逻辑）；代理加载失败时回退直链，自建部署
- * 在可直连 Google 的网络下仍能正常显示。包装幂等：已代理路径原样返回。 */
-function proxifyImageUrl(url?: string): string {
-  if (!url || !/^https?:\/\//i.test(url)) return url || "";
-  if (url.startsWith("/api/image")) return url;
-  return `/api/image?url=${encodeURIComponent(url)}`;
-}
-
-/** 经图片代理加载的 <Image>：代理地址失败（onError）自动回退原直链 */
-function YtImage(
-  props: Omit<ImageProps, "src" | "unoptimized" | "onError"> & { src: string }
-) {
-  const { src, alt, ...rest } = props;
-  const [current, setCurrent] = useState(() => proxifyImageUrl(src));
-  useEffect(() => {
-    setCurrent(proxifyImageUrl(src));
-  }, [src]);
-  return (
-    <Image
-      {...rest}
-      src={current}
-      alt={alt}
-      unoptimized
-      onError={() => {
-        if (current !== src) setCurrent(src);
-      }}
-    />
-  );
-}
+ * 在可直连 Google 的网络下仍能正常显示。统一用 ProxiedImage（见 components/ui）。 */
 
 /* === 官方 IFrame Player API（用于主按钮控制内嵌播放器的 播放/暂停） === */
 
@@ -525,7 +498,7 @@ export default function YouTubeVideo({ data }: { data: ApiResponse }) {
                 className={`absolute inset-0 rounded-full bg-gradient-to-br ${YT_GRADIENT} blur-sm opacity-50`}
               />
               {d.avatar ? (
-                <YtImage
+                <ProxiedImage
                   src={d.avatar}
                   alt={d.author || "频道头像"}
                   width={56}
@@ -646,7 +619,7 @@ export default function YouTubeVideo({ data }: { data: ApiResponse }) {
             className="group relative block w-full overflow-hidden rounded-2xl bg-black cursor-pointer text-left">
             <div className="relative aspect-video w-full">
               {cover ? (
-                <YtImage
+                <ProxiedImage
                   src={cover}
                   alt={d.title || "视频封面"}
                   fill

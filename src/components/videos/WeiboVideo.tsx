@@ -1,6 +1,6 @@
 "use client";
 import { useState } from "react";
-import Image from "next/image";
+import ProxiedImage from "@/components/ui/ProxiedImage";
 import { ApiResponse, ParseData } from "@/types/api";
 import { formatCountLoose } from "@/lib/format";
 import { scrollToElement } from "@/lib/dom";
@@ -116,13 +116,12 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
             {weiboData.avatar && (
               <div className="relative flex-shrink-0">
                 <div className="absolute inset-0 rounded-full bg-gradient-to-br from-[#e6162d] to-[#ff4d6a] blur-sm opacity-50" />
-                <Image
+                <ProxiedImage
                   src={weiboData.avatar}
                   alt={weiboData.author || ""}
                   width={56}
                   height={56}
                   className="relative rounded-full border-2 border-glass-3"
-                  unoptimized
                 />
               </div>
             )}
@@ -228,14 +227,13 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
               {imageLoading && (
                 <div className="absolute inset-0 bg-glass-2 animate-pulse" />
               )}
-              <Image
+              <ProxiedImage
                 src={images[0]}
                 alt={weiboData.title || "图片"}
                 fill
                 sizes="(max-width: 800px) 100vw, 800px"
                 className="object-cover"
                 priority
-                unoptimized
                 onLoad={() => setImageLoading(false)}
               />
             </a>
@@ -262,13 +260,12 @@ export default function WeiboVideo({ data }: WeiboVideoProps) {
                     className={`relative aspect-square rounded-xl overflow-hidden group block bg-black ${
                       images.length === 4 && index >= 2 ? "col-span-1" : ""
                     }`}>
-                    <Image
+                    <ProxiedImage
                       src={imageUrl}
                       alt={`${weiboData.title || "图片"} ${index + 1}`}
                       fill
                       sizes="(max-width: 800px) 50vw, 400px"
                       className="object-cover transition-transform duration-500 group-hover:scale-105"
-                      unoptimized
                     />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
                   </SelectableImageLink>

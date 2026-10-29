@@ -91,6 +91,44 @@ describe("image proxy CDN fallback", () => {
     expect(res.status).toBe(502);
     expect(await res.text()).toContain("404");
   });
+
+  it("字节系图床带 douyin Referer，且主地址与备选共用同一份回源预算", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response("nope", { status: 403 }))
+      .mockResolvedValueOnce(
+        new Response(goodJpeg, { headers: { "content-type": "image/jpeg" } })
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await GET(
+      imageRequest(
+        "https://p26-sign.douyinpic.com/tos-cn-i-dy/a1~tplv.webp",
+        "https://p3.douyinpic.com/tos-cn-i-dy/a1~tplv.webp"
+      )
+    );
+
+    expect(res.status).toBe(200);
+    const [primary, fallback] = fetchMock.mock.calls;
+    expect(primary[1].headers.Referer).toBe("https://www.douyin.com/");
+    expect(fallback[1].headers.Referer).toBe("https://www.douyin.com/");
+    // 预算是「整轮一个信号」而不是逐候选各起一档：后者最坏耗时按候选数翻倍，
+    // 会超出站点前面 CDN 的 ~10s 掐断阈值，浏览器只拿到断连而不是 502
+    expect(primary[1].signal).toBeInstanceOf(AbortSignal);
+    expect(fallback[1].signal).toBe(primary[1].signal);
+  });
+
+  it("B站 hdslb 不带 Referer（实测第三方 Referer 反被 403，见 docs/bilibili-opus-images-design.md）", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(goodJpeg, { headers: { "content-type": "image/jpeg" } })
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await GET(imageRequest("https://i0.hdslb.com/bfs/new_dyn/a1.webp"));
+
+    expect(res.status).toBe(200);
+    expect(fetchMock.mock.calls[0][1].headers.Referer).toBeUndefined();
+  });
 });
 
 /** 代理串还原（只看结构，便于断言改写结果而不复制 encode 细节） */

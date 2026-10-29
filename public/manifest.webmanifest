@@ -1,22 +1,28 @@
 {
-  "name": "即刻解析 短视频解析",
-  "short_name": "即刻解析",
+  "name": "MediaGet 短视频解析",
+  "short_name": "MediaGet",
   "description": "支持抖音、快手、B站、微博、小红书、西瓜、TikTok、X、Instagram、YouTube 等 20+ 平台的短视频解析与下载工具",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#051210",
-  "theme_color": "#051210",
+  "background_color": "#0b0c0d",
+  "theme_color": "#0b0c0d",
   "icons": [
     {
-      "src": "/icon.png",
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
       "purpose": "any"
     },
     {
-      "src": "/icon.svg",
-      "sizes": "any",
-      "type": "image/svg+xml",
+      "src": "/icon-512-maskable.png",
+      "sizes": "512x512",
+      "type": "image/png",
       "purpose": "maskable"
     }
   ]

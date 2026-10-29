@@ -10,7 +10,7 @@ import TruncatedText from "@/components/ui/truncated-text";
 /**
  * 平台感知的「作品信息面板」 —— 展示解析结果中的元数据字段。
  *
- * 设计：每个平台配置一张字段表（字段 + 标签 + 可选格式化），
+ * 设计：每个平台配置一张字段表（字段 + 标签 + 可选格式化 + 可选链接化），
  * 只渲染「有值」的行，缺字段时自动隐藏，避免出现空白占位。
  * 各平台结果卡片只需 <ParseInfoPanel platform data title /> 一行即可接入，
  * 未来后端补充新字段后，改这里的配置表即可自动展示，无需改动各卡片。
@@ -23,7 +23,12 @@ interface FieldDef {
   label: string;
   /** 自定义取值 + 格式化；返回 undefined 表示该行不展示 */
   format?: (value: unknown, data: ParseData) => string | undefined;
+  /** 值本身是地址时渲染成超链接（新窗口打开） */
+  link?: boolean;
 }
+
+/** 面板渲染后的一行；`href` 存在时值渲染成超链接 */
+type InfoRow = { label: string; value: string; href?: string };
 
 interface ParseInfoPanelProps {
   data: ParseData | null | undefined;
@@ -146,6 +151,23 @@ const TYPE_FIELD: FieldDef = {
   format: formatType,
 };
 
+/**
+ * 原始链接（内核下发的媒体直链 `data.url`）——全平台同一行、同一判据：
+ * 只认 http(s) 绝对地址，图文/纯文字/嵌入降级等无直链的结果自动隐藏该行。
+ *
+ * href 用直链原值，不套站内视频代理：这一行的用途是「看到并复制平台真实地址」。
+ * 代价是部分 CDN（小红书 / 微博 / twimg / googlevideo）校验 Referer，浏览器新窗口
+ * 直接打开可能被拒；这与播放器、下载按钮无关——那两处仍走 `/api/video-proxy`。
+ * 超长地址按站点统一规则截断，悬浮看全文，面板「复制」拿完整原文。
+ */
+const URL_FIELD: FieldDef = {
+  key: "url",
+  label: "原始链接",
+  format: (value) =>
+    typeof value === "string" && /^https?:\/\//i.test(value) ? value : undefined,
+  link: true,
+};
+
 /** 各平台字段表：label 按平台语境定制，字段按展示优先级排列 */
 const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
   // 博主卡已展示：昵称 / 抖音号 / 简介 / 关注 / 粉丝 / 获赞，这里只保留视频相关信息
@@ -161,6 +183,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     { key: "musicAuthor", label: "背景音乐" },
     { key: "musicTitle", label: "背景音乐标题" },
     { key: "awemeId", label: "视频ID" },
+    URL_FIELD,
   ],
   // UP主卡已展示：昵称 / UID / 简介 / 关注 / 粉丝 / 获赞，这里只保留视频相关信息
   bilibili: [
@@ -182,6 +205,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
       label: "内容类型",
       format: () => "视频",
     },
+    URL_FIELD,
   ],
   // B站图文动态（/opus/）：动态标题 + 发布时间 + 互动统计（统计由后端归一到 stat.like/reply/favorite/share）
   bilibiliOpus: [
@@ -192,6 +216,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     { key: "stat.favorite", label: "收藏", format: formatCount },
     { key: "stat.share", label: "分享", format: formatCount },
     TYPE_FIELD,
+    URL_FIELD,
   ],
   // 博主卡已展示：昵称 / 小红书号 / 简介 / 关注 / 粉丝 / 获赞，这里只保留帖子（笔记）相关信息
   xhs: [
@@ -203,6 +228,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     { key: "share", label: "分享", format: formatCount },
     TYPE_FIELD,
     { key: "noteId", label: "笔记ID" },
+    URL_FIELD,
   ],
   // 博主卡已展示：昵称 / 快手号 / 简介 / 关注 / 粉丝 / 获赞，这里只保留视频相关信息
   kuaishou: [
@@ -239,6 +265,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     },
     { key: "duration", label: "视频时长", format: formatDuration },
     TYPE_FIELD,
+    URL_FIELD,
   ],
   // 博主卡已展示：昵称 / 微博号 / 认证 / 简介 / 关注 / 粉丝 / 获赞 / 微博数，
   // 这里只保留微博内容相关信息（清晰度与时长仅单P 视频帖下发，多P 走下载行逐P 徽标）
@@ -252,11 +279,13 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     { key: "duration", label: "视频时长", format: formatDuration },
     { key: "ipRegion", label: "IP属地" },
     TYPE_FIELD,
+    URL_FIELD,
   ],
   qsmusic: [
     { key: "name", label: "歌曲" },
     { key: "core", label: "来源" },
     TYPE_FIELD,
+    URL_FIELD,
   ],
   // 博主卡已展示：昵称 / 用户名 / 简介 / 关注 / 粉丝，这里只保留推文内容相关信息
   twitter: [
@@ -266,6 +295,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
     { key: "replies", label: "评论", format: formatCount },
     { key: "views", label: "查看", format: formatCount },
     TYPE_FIELD,
+    URL_FIELD,
   ],
   // 频道卡已展示：频道名（可点主页）/ @频道号 / 订阅等统计；视频简介走 CaptionBox。
   // 视频ID 属作品信息，归入本面板展示；其余与 B站布局一致，只保留视频相关统计
@@ -291,6 +321,7 @@ const PLATFORM_FIELDS: Record<string, FieldDef[]> = {
         return m ? m[1] : undefined;
       },
     },
+    URL_FIELD,
   ],
 };
 
@@ -300,6 +331,7 @@ const DEFAULT_FIELDS: FieldDef[] = [
   { key: "authorId", label: "作者ID" },
   TYPE_FIELD,
   { key: "time", label: "发布时间", format: formatTime },
+  URL_FIELD,
 ];
 
 /* ---------------- 组件 ---------------- */
@@ -317,13 +349,13 @@ export default function ParseInfoPanel({
   const fields = (platform && PLATFORM_FIELDS[platform]) || DEFAULT_FIELDS;
 
   const rows = fields
-    .map((f) => {
+    .map((f): InfoRow | null => {
       const raw = getRawValue(data, f.key);
       const value = f.format ? f.format(raw, data) : normalizeValue(raw);
       if (!value) return null;
-      return { label: f.label, value };
+      return { label: f.label, value, href: f.link ? value : undefined };
     })
-    .filter((r): r is { label: string; value: string } => r !== null);
+    .filter((r): r is InfoRow => r !== null);
 
   if (rows.length === 0) return null;
 
@@ -379,11 +411,24 @@ export default function ParseInfoPanel({
             key={row.label}
             className="flex min-w-0 items-baseline justify-between gap-3">
             <dt className="shrink-0 text-[13px] text-muted">{row.label}</dt>
-            <TruncatedText
-              as="dd"
-              text={row.value}
-              className="min-w-0 truncate text-[13px] text-primary"
-            />
+            {row.href ? (
+              <dd className="min-w-0">
+                <TruncatedText
+                  as="a"
+                  text={row.value}
+                  href={row.href}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block min-w-0 truncate text-[13px] text-accent transition-colors hover:text-accent/80 hover:underline"
+                />
+              </dd>
+            ) : (
+              <TruncatedText
+                as="dd"
+                text={row.value}
+                className="min-w-0 truncate text-[13px] text-primary"
+              />
+            )}
           </div>
         ))}
       </dl>

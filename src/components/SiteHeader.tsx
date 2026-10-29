@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname } from "next/navigation";
 import { Music2, Sliders } from "lucide-react";
 import { siteConfig } from "@/config/site";
@@ -73,21 +74,29 @@ export default function SiteHeader() {
               </>
             ) : (
               <>
-                <span className="grid h-8 w-8 shrink-0 place-items-center rounded-xl bg-[var(--accent)]">
-                  {/* 闪电 / 播放图标 */}
-                  <svg
-                    className="h-4 w-4 text-white"
-                    viewBox="0 0 24 24"
-                    fill="currentColor"
-                    aria-hidden="true">
-                    <path d="M13 2L4.5 13.5H11L9.5 22 19.5 9.5H12.5L13 2z" />
-                  </svg>
-                </span>
-                <span className="flex min-w-0 flex-col leading-tight">
-                  <span className="truncate text-sm font-bold text-foreground">
-                    {siteConfig.name}
-                  </span>
-                  <span className="text-[10px] text-muted">视频解析下载</span>
+                {/* 字标与下游 desktop 端同一份品牌资产（两份墨色随主题二选一，不闪帧） */}
+                <span
+                  role="img"
+                  aria-label="MediaGet"
+                  className="inline-flex shrink-0 items-center">
+                  <Image
+                    src="/brand/logo-lockup-on-dark.png"
+                    alt=""
+                    width={347}
+                    height={80}
+                    className="hidden h-6 w-auto dark:block"
+                    draggable={false}
+                    priority
+                  />
+                  <Image
+                    src="/brand/logo-lockup-on-light.png"
+                    alt=""
+                    width={347}
+                    height={80}
+                    className="block h-6 w-auto dark:hidden"
+                    draggable={false}
+                    priority
+                  />
                 </span>
               </>
             )}

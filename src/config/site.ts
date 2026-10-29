@@ -1,7 +1,7 @@
 // 站点级配置：集中管理品牌名、联系邮箱、域名等信息
 // 修改品牌名/邮箱时只需改这一处，所有页面、页脚、法律页面会同步更新
 export const siteConfig = {
-  name: "即刻解析",
+  name: "MediaGet",
   domain: "hotier.cc.cd",
   url: "https://get.hotier.cc.cd",
 
