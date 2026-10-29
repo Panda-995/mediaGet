@@ -192,7 +192,7 @@ const url = extractUrlFromShareText("复制打开抖音，看看…… https://v
 | `bilibili` | 哔哩哔哩 | 视频（分P/多清晰度）、图文动态（opus）、纯文字动态 | `BILIBILI_COOKIE` 建议配置；`BILIBILI_USER_AGENT` 可选 | 不支持 | 无 Cookie 的数据中心 IP 常被 `-352` 风控；opus 仅支持 `/opus/`、`/dynamic/` |
 | `weibo` | 微博 | 视频、图文、纯文字 | 无（访客模式） | 声明支持，实际未挂载 | 部分计数/作者字段只在桌面接口存在 |
 | `acfun` | AcFun | 视频 | 无 | 声明支持，实际未挂载 | — |
-| `twitter` | X / Twitter | 视频、图片、纯文字 | `TWITTER_FIXER_SERVICES` 可选（自定义 fixer 域名） | **可用** | 依赖第三方 fixer / syndication，可能随风控波动 |
+| `twitter` | X / Twitter | 视频、图片、纯文字 | `TWITTER_FIXER_SERVICES` 可选（自定义 fixer 域名）；`TWITTER_FIXER_RELAY_URL` 默认阅读器中继 | **可用** | 依赖第三方 fixer / syndication，可能随风控波动；直连被出口 IP 风控时经中继补取 |
 | `tiktok` | TikTok | 视频 | **必须**有 `yt-dlp`（`YTDLP_BIN`、`YTDLP_TIMEOUT_MS`） | 不支持 | 只能在 Docker / Node 运行，Cloudflare 等无子进程环境不可用 |
 | `instagram` | Instagram | 视频、图片/图集 | `IG_COOKIE` 强烈建议；`IG_TIMEOUT_MS` 可选 | 不支持 | 匿名访问普遍撞登录墙 |
 | `youtube` | YouTube | 视频 | `YOUTUBE_API_KEY` 可选（只补元数据）；Piped/Invidious 主机可配 | 不支持 | 直链源全部失败时返回 `embedOnly` 降级（只有官方嵌入，无直链） |
@@ -309,6 +309,7 @@ setKernelConfig({
 | `igCookie` | `IG_COOKIE` | 强烈建议 |
 | `igTimeoutMs` | `IG_TIMEOUT_MS` | 默认 `TIMEOUT.PAGE`（20s） |
 | `twitterFixerServices` | `TWITTER_FIXER_SERVICES` | 逗号分隔的自定义 fixer 域名 |
+| `twitterFixerRelayUrl` | `TWITTER_FIXER_RELAY_URL` | 直连 fixer 全失败时的阅读器中继，默认 `https://r.jina.ai/`；`off` 关闭，可填自建中继基地址 |
 | `youtubeApiKey` | `YOUTUBE_API_KEY` | 可选，只补元数据，不给直链 |
 | `youtubeSourceTimeoutMs` | `YOUTUBE_SOURCE_TIMEOUT_MS` | 默认 6000 |
 | `youtubeApiTimeoutMs` | `YOUTUBE_API_TIMEOUT_MS` | 默认 5000 |

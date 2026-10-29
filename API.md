@@ -999,6 +999,8 @@ BILIBILI_USER_AGENT=your_user_agent
 
 # X/Twitter 解析（可选）：逗号分隔的 fxTwitter / fixupx / vxtwitter 等 fixer 服务，覆盖默认集
 # TWITTER_FIXER_SERVICES=https://api.fxtwitter.com,...
+# 直连 fixer 全失败时的阅读器中继（默认 r.jina.ai；填 off 关闭，可换自建中继基地址）
+# TWITTER_FIXER_RELAY_URL=https://r.jina.ai/
 
 # YouTube（可选）：官方 Data API v3 密钥仅作优先元数据源（无直链）；Piped / Invidious 为
 # 直链解析源，可指向自托管实例覆盖默认集（Invidious 默认不启用）

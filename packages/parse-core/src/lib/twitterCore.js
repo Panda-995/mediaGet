@@ -120,6 +120,70 @@ async function fetchFixerJson(host, tweetId, timeoutMs) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// 公共阅读器中继（r.jina.ai）
+//
+// 直连 fixer 会按出口 IP 被拦：Workers 出口被 fx 前置 WAF 挑战或按 IP 限流
+//（403 challenge / 429 error 1015），而机房之外的出口（家宽、Netlify 的 AWS）
+// 正常。直连全挂后经阅读器中继再取一次同一份 fx JSON——中继由第三方出网，
+// 我们只交出「推文 ID 拼出的 fx 公开接口 URL」，不含任何用户信息。
+// 默认开启；TWITTER_FIXER_RELAY_URL=off 关闭，或填自建中继基地址替换。
+// ---------------------------------------------------------------------------
+const RELAY_DEFAULT_BASE = "https://r.jina.ai/";
+
+/** 中继基地址；关闭词（off/none/false/0）或空值返回空串表示禁用 */
+function relayBase() {
+  const raw = getConfigOrEnv(
+    "twitterFixerRelayUrl",
+    "TWITTER_FIXER_RELAY_URL",
+    RELAY_DEFAULT_BASE
+  );
+  const base = String(raw ?? "").trim();
+  if (!base || /^(off|none|false|0)$/i.test(base)) return "";
+  return base.endsWith("/") ? base : `${base}/`;
+}
+
+/**
+ * 剥掉阅读器的 Markdown 前言，取出其中的 JSON 原文。
+ * 正文形如 `Title: ...\n\nURL Source: ...\n\nMarkdown Content:\n{...}`，
+ * 找不到前言时直接从第一个 `{` 起截取（兼容自定义中继直出 JSON）。
+ * 不是合法 JSON 返回 null——中继截断/被反爬替换成 HTML 时按失败处理。
+ */
+function extractRelayJson(text) {
+  if (typeof text !== "string") return null;
+  const marker = text.indexOf("Markdown Content:");
+  const body = marker >= 0 ? text.slice(marker + "Markdown Content:".length) : text;
+  const start = body.indexOf("{");
+  const end = body.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const json = JSON.parse(body.slice(start, end + 1));
+    return json && typeof json === "object" ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 经中继读取 fx 的 v2 接口；禁用/失败返回 null（失败由调用方退回 syndication） */
+async function fetchFixerJsonViaRelay(tweetId, timeoutMs = TIMEOUT.DEFAULT) {
+  const base = relayBase();
+  if (!base || !tweetId) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}https://api.fxtwitter.com/2/status/${tweetId}`, {
+      headers: { "User-Agent": "Mozilla/5.0", Accept: "text/plain" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return extractRelayJson(await res.text());
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * 并发竞速：返回第一批 resolve 为非空值的结果，全部失败返回 null。
  * 所有 promise 都不会 reject（fetchFixerJson 已把异常吞成 null），
@@ -655,7 +719,8 @@ function buildVxtwitterResult(t) {
 /**
  * 优先解析：fxTwitter 家族并发竞速，任一成功即返回完整 result
  * （媒体带 tag 直链 + 完整作者信息：简介/粉丝/关注 + 互动统计）；
- * vxtwitter：仅当 fxTwitter 家族全部失败才兜底（缺简介/粉丝/查看量）。
+ * fxTwitter 家族全部失败后，阅读器中继（r.jina.ai，取同一份 fx 数据）与
+ * vxtwitter（缺简介/粉丝/查看量）并行，中继优先。
  * 全部失败（网络/超时/非 200/结构缺失）返回 null，由调用方降级官方 syndication。
  */
 async function parseViaFixer(tweetId) {
@@ -668,15 +733,25 @@ async function parseViaFixer(tweetId) {
   const fx = await raceFixerResults(fxHosts, tweetId);
   if (fx) return fx;
 
-  if (vxHost) {
-    const json = await fetchFixerJson(vxHost, tweetId, 4000);
-    if (json) return buildVxtwitterResult(pickVxtweet(json));
-  }
-  return null;
+  // 直连全挂（Workers 出口被 fx 的 WAF 挑战/限流是常态）→ 中继 fx 与 vx 兜底并行：
+  // 中继拿到的是 fx 完整结构（简介/粉丝/带 tag 直链），优先于 vx 的部分字段
+  const [relayed, vxResult] = await Promise.all([
+    fetchFixerJsonViaRelay(tweetId).then((json) => {
+      const t = pickFxTweet(json);
+      return t ? buildFxResult(t) : null;
+    }),
+    vxHost
+      ? fetchFixerJson(vxHost, tweetId, 4000).then((json) => {
+          const t = pickVxtweet(json);
+          return t ? buildVxtwitterResult(t) : null;
+        })
+      : null,
+  ]);
+  return relayed || vxResult || null;
 }
 
 async function parseVideoId(tweetId) {
-  // 优先 fixer 服务：fxTwitter 家族并发竞速，vxtwitter 兜底。
+  // 优先 fixer 服务：fxTwitter 家族并发竞速，中继 fx / vxtwitter 兜底。
   // fixer 返回的数据更完整（媒体带 tag 直链、作者简介/粉丝、互动统计），
   // 且对删除/受限/敏感推文常缓存有完整内容，稳定性优于官方 syndication。
   const fixerResult = await parseViaFixer(tweetId);
@@ -936,6 +1011,7 @@ export {
   buildVxtwitterResult,
   buildVideoFixTable,
   cleanTweetText,
+  extractRelayJson,
   fetchAuthorProfile,
   firstNonNull,
   fixTwimgVideoUrl,

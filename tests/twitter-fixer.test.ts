@@ -7,6 +7,7 @@ import {
   buildVxtwitterResult,
   buildVideoFixTable,
   cleanTweetText,
+  extractRelayJson,
   fetchAuthorProfile,
   firstNonNull,
   fixTwimgVideoUrl,
@@ -877,6 +878,102 @@ describe("parseVideoId：fixer 优先，官方 syndication 兜底", () => {
     const r = await parseVideoId("2094749764659384710");
     expect(r?.code).toBe(404);
     expect(r?.msg).toContain("不可见");
+  });
+});
+
+describe("阅读器中继：直连 fixer 全挂时经 r.jina.ai 取 fx", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.TWITTER_FIXER_RELAY_URL;
+  });
+
+  const relayedFx = JSON.stringify({
+    code: 200,
+    message: "OK",
+    status: {
+      text: "中继推文",
+      created_at: "Mon Aug 31 10:14:02 +0000 2026",
+      author: {
+        name: "中继作者",
+        screen_name: "relay",
+        description: "中继简介",
+        followers: 88,
+        following: 8,
+      },
+      likes: 3,
+      retweets: 2,
+      replies: 1,
+      views: 9,
+      media: { photos: [], videos: [], all: [] },
+    },
+  });
+
+  /** 直连 fixer 一律模拟 Workers 出口被 WAF 挑战；中继按 relayText 成功或失败 */
+  function stubWafBlocked(relayText: string | null) {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = String(url);
+      seen.push(u);
+      if (u.startsWith("https://r.jina.ai/")) {
+        return relayText === null
+          ? new Response("bad gateway", { status: 502 })
+          : new Response(relayText, { status: 200 });
+      }
+      return new Response("Just a moment...", {
+        status: 403,
+        headers: { "cf-mitigated": "challenge" },
+      });
+    });
+    return seen;
+  }
+
+  it("直连全挂时中继成功：拿到 fx 完整字段，不再打扰 syndication", async () => {
+    const seen = stubWafBlocked(
+      `Title: \n\nURL Source: https://api.fxtwitter.com/2/status/123\n\nMarkdown Content:\n${relayedFx}`
+    );
+    const r = await parseVideoId("2094749764659384710");
+    expect(r?.code).toBe(200);
+    expect(r!.data.title).toBe("中继推文");
+    expect(r!.data.sign).toBe("中继简介");
+    expect(r!.data.followerCount).toBe(88);
+    expect(seen).toContain(
+      "https://r.jina.ai/https://api.fxtwitter.com/2/status/2094749764659384710"
+    );
+    expect(seen.some((u) => u.includes("cdn.syndication.twimg.com"))).toBe(false);
+  });
+
+  it("中继也失败 → 退回 syndication", async () => {
+    const seen = stubWafBlocked(null);
+    const r = await parseVideoId("2094749764659384710");
+    // syndication 同样被 stub 成 403，用状态码确认走到了官方兜底
+    expect(r?.code).toBe(403);
+    expect(seen.some((u) => u.includes("cdn.syndication.twimg.com"))).toBe(true);
+  });
+
+  it("TWITTER_FIXER_RELAY_URL=off 时完全不发中继请求", async () => {
+    process.env.TWITTER_FIXER_RELAY_URL = "off";
+    const seen = stubWafBlocked(`Markdown Content:\n${relayedFx}`);
+    const r = await parseVideoId("2094749764659384710");
+    expect(r?.code).toBe(403);
+    expect(seen.some((u) => u.includes("r.jina.ai"))).toBe(false);
+  });
+});
+
+describe("extractRelayJson：剥掉阅读器前言取 JSON", () => {
+  it("Markdown 包装里取出 JSON", () => {
+    const text = 'Title: \n\nURL Source: https://x\n\nMarkdown Content:\n{"a":1}';
+    expect(extractRelayJson(text)).toEqual({ a: 1 });
+  });
+
+  it("裸 JSON（自定义中继直出）同样可解析", () => {
+    expect(extractRelayJson('{"a":{"b":2}}')).toEqual({ a: { b: 2 } });
+  });
+
+  it("截断/HTML/非对象一律返回 null", () => {
+    expect(extractRelayJson('{"a":1')).toBeNull();
+    expect(extractRelayJson("<html>blocked</html>")).toBeNull();
+    expect(extractRelayJson("null")).toBeNull();
+    expect(extractRelayJson(undefined as unknown as string)).toBeNull();
   });
 });
 
