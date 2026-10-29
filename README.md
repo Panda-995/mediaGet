@@ -121,7 +121,7 @@
 2. **Site configuration → Environment variables** 填入运行配置
 3. 点击 **Deploy site**，完成后绑定域名
 
-> 函数默认 10 秒超时、响应体上限 6 MB、TikTok 不可用，适合演示与备用。
+> 函数默认 10 秒超时、响应体上限 6 MB、TikTok 不可用，适合演示与备用。经 `/api/video-proxy` 转发的视频超过约 6 MB 会被截断，X 等平台的视频播放/下载因此不可靠；需要完整播放请用 Cloudflare Workers 或 Docker。
 
 ### Docker（推荐）
 
