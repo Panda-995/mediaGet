@@ -113,6 +113,8 @@
 
 > 构建命令 `npm run build:cf` 会先生成 OpenNext 产物。建议 Paid 套餐；TikTok 不可用。
 
+> X 的第三方 fixer 服务会按出口 IP 做人机校验/限流，Workers 出口基本拿不到，解析会退回官方 syndication：正文与媒体正常，但缺博主简介/粉丝数，敏感内容可能只得到「已删除或不可见」。需要完整作者信息时用 Docker 或 Netlify 自建出口，排障可看 `/api/health?probe=twitter`。
+
 ### Netlify
 
   <a href="https://app.netlify.com/start/deploy?repository=https://github.com/hotier/mediaGet"><img src="https://www.netlify.com/img/deploy/button.svg" alt="Deploy to Netlify" height="32" /></a>
