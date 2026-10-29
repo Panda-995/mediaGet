@@ -244,6 +244,9 @@ export async function GET(request) {
     "Content-Type": contentType,
     "Cache-Control": "public, max-age=3600",
     "Accept-Ranges": acceptRanges || "bytes",
+    // Netlify CDN 默认缓存键不含查询串，不声明会把所有视频代理合并成一份缓存
+    //（表现为播放器放的是别的视频/别的分段）；其它运行时忽略该头。
+    "Netlify-Vary": "query",
   };
   if (contentLength) {
     responseHeaders["Content-Length"] = contentLength;
