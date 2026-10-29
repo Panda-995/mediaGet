@@ -6,7 +6,7 @@
    主题策略：class 模式
    - :root 定义浅色令牌
    - .dark class 覆盖为深色令牌（由 ThemeToggle / 初始化脚本在 <html> 上显式挂载）
-   - 平台强调色 / 语义色在 .dark 下继承 :root，无需重复 */
+   - 平台强调色在 .dark 下改用可读版本（--accent-readable），语义色继承 :root */
 
 @layer base {
   :root {
@@ -29,8 +29,11 @@
     --accent-weibo: #e6162d;
     --accent-xhs: #ff2442;
 
-    /* Dynamic Accent（跟随当前解析平台动态变化；默认品牌薄荷青绿） */
-    --accent: #14b8a6;
+    /* Dynamic Accent（跟随当前解析平台动态变化；默认品牌薄荷青绿）
+       --accent-brand 由页面按平台注入（原样品牌色）；
+       --accent-readable 是深色主题用的版本：平台自带 darkColor 就用它（X 的链接蓝、
+       TikTok 的青），否则取品牌色按对比度混白提亮 */
+    --accent: var(--accent-brand, #14b8a6);
 
     /* Semantic */
     --success: #0d9f6e;
@@ -66,8 +69,9 @@
     --background: #0a0f16;
     --foreground: #e6edf3;
 
-    /* Dynamic Accent - 暗色下覆盖为靛蓝，与浅色的薄荷青绿区分 */
-    --accent: #3b82f6;
+    /* Dynamic Accent - 暗色下默认靛蓝；有平台时改用 --accent-readable
+       （X #14171a / TikTok #010101 这类近黑色在深底上不可见，故换平台亮色） */
+    --accent: var(--accent-readable, #3b82f6);
 
     /* Glass Layers */
     --glass-1: rgba(255, 255, 255, 0.03);

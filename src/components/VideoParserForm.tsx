@@ -10,6 +10,7 @@ import {
   detectPlatform,
   hasValidVideoUrl,
 } from "@/utils/share";
+import { readableOnDark } from "@/utils/readable-color";
 import {
   detectMusicZoneSongLink,
   MUSIC_PLATFORM_LABEL,
@@ -429,14 +430,19 @@ export default function VideoParserForm({
     parseVideo(url, target);
   };
 
-  // Update CSS variable for platform accent
+  // 注入平台强调色：品牌色原样给浅色主题，另给一份深色主题用的可读版本。
+  // 两个变量都由 CSS 按主题挑选——不能直接写 --accent，内联值会压过 .dark 规则，
+  // 近黑品牌色（X/TikTok）在深色下就成了看不见的文字；近黑平台自带 darkColor
+  // 时优先用它（X 的链接蓝 / TikTok 的青），再兜底提亮。
   useEffect(() => {
-    if (detectedPlatform && VIDEO_PLATFORMS[detectedPlatform]) {
-      document.documentElement.style.setProperty(
-        "--accent",
-        VIDEO_PLATFORMS[detectedPlatform].color
-      );
-    }
+    const cfg = detectedPlatform
+      ? VIDEO_PLATFORMS[detectedPlatform]
+      : undefined;
+    if (!cfg) return;
+    const darkAccent = "darkColor" in cfg ? cfg.darkColor : cfg.color;
+    const root = document.documentElement.style;
+    root.setProperty("--accent-brand", cfg.color);
+    root.setProperty("--accent-readable", readableOnDark(darkAccent));
   }, [detectedPlatform]);
 
   // 平台 chip 点击：选中平台（含「自动识别」）、聚焦输入框；若输入框已有链接且匹配则直接解析

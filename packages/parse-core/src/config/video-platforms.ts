@@ -67,6 +67,8 @@ export const VIDEO_PLATFORMS = {
     name: "X (Twitter)",
     emoji: "𝕏",
     color: "#14171a",
+    // 品牌色近黑，深色主题下改用 X 自带的链接蓝，否则强调色在深底上不可见
+    darkColor: "#1d9bf0",
     gradient: "from-[#14171a] to-[#657786]",
     logo: "/logos/x.svg",
   },
@@ -74,6 +76,8 @@ export const VIDEO_PLATFORMS = {
     name: "TikTok",
     emoji: "🎶",
     color: "#010101",
+    // 同上：TikTok 深色主题用青色调
+    darkColor: "#25f4ee",
     gradient: "from-[#010101] to-[#25f4ee]",
     logo: "/logos/tiktok.svg",
   },
