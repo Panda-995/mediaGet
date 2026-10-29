@@ -17,6 +17,7 @@ import {
   pickMp4Qualities,
   pickFxTweet,
   pickVxtweet,
+  probeFixerHosts,
   raceFixerResults,
 } from "@/lib/twitterCore";
 
@@ -1058,5 +1059,27 @@ describe("buildVideoFixTable / fixTwimgVideoUrl：twimg 直链补 tag 签名", (
       "https://video.twimg.com/a/b.mp4"
     );
     expect(fixTwimgVideoUrl("", buildVideoFixTable({ media: realFxMedia }))).toBe("");
+  });
+});
+
+describe("probeFixerHosts：部署排障探针", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("逐主机回传状态码/错误名，单主机失败不影响其它主机", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      seen.push(url);
+      if (url.includes("fixupx")) throw new TypeError("fetch failed");
+      return new Response("{}", { status: 404 });
+    });
+
+    type Probe = { host: string; status?: number; error?: string };
+    const hosts = (await probeFixerHosts(1000)) as Probe[];
+    expect(hosts).toHaveLength(4);
+    const byHost = Object.fromEntries(hosts.map((h) => [h.host, h]));
+    expect(byHost["api.fxtwitter.com"].status).toBe(404);
+    expect(byHost["api.fixupx.com"].error).toBe("TypeError");
+    expect(seen).toContain("https://api.fxtwitter.com/2/status/1");
+    expect(seen).toContain("https://api.vxtwitter.com/i/status/1");
   });
 });

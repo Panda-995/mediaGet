@@ -868,6 +868,41 @@ export async function twitterParse(shareUrl) {
   return parseVideoId(tweetId);
 }
 
+/**
+ * fixer 主机可达性探针（部署排障用，挂 /api/health?probe=twitter）。
+ *
+ * 背景：X 的 fixer 通道全部静默失败时，解析会退到官方 syndication，敏感推文只能拿到
+ * tombstone（「已删除或不可见」）——从结果本身看不出是「fixer 挂了」还是「推文真没了」。
+ * 这里逐主机发一次无效 ID 的请求，只回传 HTTP 状态/错误名，不回传任何推文数据。
+ */
+export async function probeFixerHosts(timeoutMs = 5000) {
+  return Promise.all(
+    FIXER_HOSTS.map(async (host) => {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      const path = IS_VXTWITTER(host)
+        ? "i/status/1"
+        : host === "api.fxtwitter.com"
+          ? "2/status/1"
+          : "status/1";
+      try {
+        const res = await fetch(`https://${host}/${path}`, {
+          headers: { "User-Agent": "Mozilla/5.0" },
+          signal: controller.signal,
+        });
+        return { host, status: res.status };
+      } catch (e) {
+        return {
+          host,
+          error: String(e?.name || e?.message || "fetch failed").slice(0, 80),
+        };
+      } finally {
+        clearTimeout(timer);
+      }
+    })
+  );
+}
+
 // 导出纯函数供单元测试使用（不参与对外 API 面）
 export {
   buildFxResult,
