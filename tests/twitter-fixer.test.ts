@@ -959,6 +959,29 @@ describe("阅读器中继：直连 fixer 全挂时经 r.jina.ai 取 fx", () => {
   });
 });
 
+describe("fixer 请求头：拟浏览器整套头规避 WAF 挑战", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("直连 fx 带 Accept/Accept-Language/Referer，而不只是裸 UA", async () => {
+    const sent: Headers[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (String(url).includes("api.fxtwitter.com")) {
+        sent.push(new Headers(init?.headers));
+      }
+      return new Response(JSON.stringify(realFxTwitterJson), { status: 200 });
+    });
+
+    const r = await parseVideoId("2094368106751951154");
+    expect(r?.code).toBe(200);
+    const h = sent[0];
+    expect(h.get("accept")).toBe("application/json,text/plain,*/*");
+    expect(h.get("accept-language")).toBe("en-US,en;q=0.9");
+    expect(h.get("referer")).toBe("https://fxtwitter.com/");
+    // 裸 Mozilla/5.0 会被 fx 前置 WAF 挑战，必须是完整 Chrome UA
+    expect(h.get("user-agent")).toContain("Chrome/");
+  });
+});
+
 describe("extractRelayJson：剥掉阅读器前言取 JSON", () => {
   it("Markdown 包装里取出 JSON", () => {
     const text = 'Title: \n\nURL Source: https://x\n\nMarkdown Content:\n{"a":1}';

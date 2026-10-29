@@ -113,7 +113,7 @@
 
 > 构建命令 `npm run build:cf` 会先生成 OpenNext 产物。建议 Paid 套餐；TikTok 不可用。
 
-> X 的第三方 fixer 会按出口 IP 做人机校验/限流，Workers 出口拿不到；直连全失败时解析会经 `r.jina.ai` 阅读器中继补取同一份 fx 数据（只转发「推文 ID 拼出的 fx 公开接口 URL」，该 URL 会经过第三方），正文、媒体、博主简介/粉丝因此都正常。介意内容外流可设 `TWITTER_FIXER_RELAY_URL=off`，此时退回官方 syndication：缺简介/粉丝，敏感内容可能报「已删除或不可见」。排障看 `/api/health?probe=twitter`。
+> X 的第三方 fixer 前置了 Cloudflare WAF，裸 `Mozilla/5.0` 的请求（Workers 出口尤甚）会直接吃 `403 challenge`；解析统一改用整套拟浏览器请求头，fx 可直达。若仍被按出口 IP 限流，会经 `r.jina.ai` 阅读器中继补取同一份 fx 数据（只转发「推文 ID 拼出的 fx 公开接口 URL」，该 URL 会经过第三方），正文、媒体、博主简介/粉丝因此都正常。介意内容外流可设 `TWITTER_FIXER_RELAY_URL=off`，此时退回官方 syndication：缺简介/粉丝，敏感内容可能报「已删除或不可见」。排障看 `/api/health?probe=twitter`（plain/browser 两档请求头对照）。
 
 ### Netlify
 

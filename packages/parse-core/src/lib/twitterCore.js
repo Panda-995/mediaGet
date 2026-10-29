@@ -94,6 +94,19 @@ const FIXER_TIMEOUT_MS = {
   "api.vxtwitter.com": 5000,
 };
 
+/**
+ * fixer 请求头：必须是「拟浏览器」的一整套，只带 UA 会被 fx 前置的 Cloudflare WAF
+ * 直接挑战（403 + cf-mitigated: challenge，Workers 出口尤其明显）。
+ * 实测（/api/health?probe=twitter）：plain 档挑战、browser 档能拿到 fx 自己的 JSON 响应。
+ */
+const FIXER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Accept: "application/json,text/plain,*/*",
+  "Accept-Language": "en-US,en;q=0.9",
+  Referer: "https://fxtwitter.com/",
+};
+
 /** 请求单个 fixer 服务，成功返回解析后的 JSON，任何失败（网络/超时/非 200）返回 null */
 async function fetchFixerJson(host, tweetId, timeoutMs) {
   const controller = new AbortController();
@@ -108,7 +121,7 @@ async function fetchFixerJson(host, tweetId, timeoutMs) {
         ? `2/status/${tweetId}`
         : `status/${tweetId}`;
     const res = await fetch(`https://${host}/${path}`, {
-      headers: { "User-Agent": "Mozilla/5.0" },
+      headers: FIXER_HEADERS,
       signal: controller.signal,
     });
     if (!res.ok) return null;
@@ -123,10 +136,9 @@ async function fetchFixerJson(host, tweetId, timeoutMs) {
 // ---------------------------------------------------------------------------
 // 公共阅读器中继（r.jina.ai）
 //
-// 直连 fixer 会按出口 IP 被拦：Workers 出口被 fx 前置 WAF 挑战或按 IP 限流
-//（403 challenge / 429 error 1015），而机房之外的出口（家宽、Netlify 的 AWS）
-// 正常。直连全挂后经阅读器中继再取一次同一份 fx JSON——中继由第三方出网，
-// 我们只交出「推文 ID 拼出的 fx 公开接口 URL」，不含任何用户信息。
+// 直连 fixer 可能按出口 IP 被拦（Workers 出口被 fx 前置 WAF 挑战或按 IP 限流；
+// 请求头已成套拟浏览器，仍被拦时走这里）。直连全挂后经阅读器中继再取一次同一份
+// fx JSON——中继由第三方出网，我们只交出「推文 ID 拼出的 fx 公开接口 URL」，不含任何用户信息。
 // 默认开启；TWITTER_FIXER_RELAY_URL=off 关闭，或填自建中继基地址替换。
 // ---------------------------------------------------------------------------
 const RELAY_DEFAULT_BASE = "https://r.jina.ai/";
@@ -943,16 +955,10 @@ export async function twitterParse(shareUrl) {
   return parseVideoId(tweetId);
 }
 
-/** 探针的两套请求头：纯 UA / 拟浏览器，用来区分「服务端拒绝该出口」与「缺头被拦」 */
+/** 探针的两套请求头：纯 UA 对照 / 生产实际用的拟浏览器头，用来区分「服务端拒绝该出口」与「缺头被拦」 */
 const PROBE_HEADER_PROFILES = {
   plain: { "User-Agent": "Mozilla/5.0" },
-  browser: {
-    "User-Agent":
-      "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-    Accept: "application/json,text/plain,*/*",
-    "Accept-Language": "en-US,en;q=0.9",
-    Referer: "https://fxtwitter.com/",
-  },
+  browser: FIXER_HEADERS,
 };
 
 function probePath(host) {
