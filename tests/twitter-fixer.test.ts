@@ -294,6 +294,111 @@ describe("fxTwitter 适配器 (buildFxResult)", () => {
   });
 });
 
+describe("buildFxResult：fixer formats 补全档位表", () => {
+  // 档位项形状；buildFxResult 是 JS 源，推断不出回调参数类型
+  type Quality = { quality: number; label: string; url: string };
+  // mp4 各档逐字取自 2026-10-29 实测 api.fxtwitter.com /2/status/2094654361331012092
+  // 的 formats（全带 ?tag=29）；高度与线上同链接 syndication 的 5 档一致
+  // （2676/1338/892/594/396）。末尾 m3u8 的文件名为构造值，仅用于验证被过滤。
+  const tagged = (path: string) =>
+    `https://video.twimg.com/amplify_video/2094654000729849856/vid/avc1/${path}?tag=29`;
+  const fxFormats = [
+    { url: tagged("2160x2676/gytaut_zsJVA3M31.mp4"), bitrate: 25128000, container: "mp4" },
+    { url: tagged("1080x1338/BSBabJlcAhbocZv2.mp4"), bitrate: 10368000, container: "mp4" },
+    { url: tagged("720x892/Dz5OZlblIIbxdj3c.mp4"), bitrate: 2176000, container: "mp4" },
+    { url: tagged("480x594/Cu5A2IVPgGzDWI6S.mp4"), bitrate: 950000, container: "mp4" },
+    { url: tagged("320x396/F-qbnSGVnTzq8KmI.mp4"), bitrate: 632000, container: "mp4" },
+    {
+      url: "https://video.twimg.com/amplify_video/2094654000729849856/pl/VBMrD4XeNux1ZrLm.m3u8?tag=29",
+      container: "m3u8",
+    },
+  ];
+
+  it("单视频：5 档挂顶层 qualities，主直链跟随最高档，档位 URL 均带 tag", () => {
+    const r = buildFxResult({
+      text: "视频",
+      author: { name: "博主", screen_name: "author" },
+      media: {
+        photos: [],
+        videos: [
+          {
+            url: tagged("2160x2676/gytaut_zsJVA3M31.mp4"),
+            thumbnail_url: "https://example.com/thumb.jpg",
+            duration: 25.054,
+            formats: fxFormats,
+          },
+        ],
+        all: [],
+      },
+    });
+    const d = r!.data;
+    expect(d.qualities?.map((q: Quality) => q.label)).toEqual([
+      "2676p",
+      "1338p",
+      "892p",
+      "594p",
+      "396p",
+    ]);
+    expect(d.qualities?.map((q: Quality) => q.quality)).toEqual([2676, 1338, 892, 594, 396]);
+    expect(d.url).toBe(d.qualities![0].url);
+    expect(d.qualities!.every((q: Quality) => q.url.includes("?tag=29"))).toBe(true);
+    // 单视频走 url 主媒体，videos 列表仍不输出
+    expect(d.videos).toBeUndefined();
+  });
+
+  it("多视频：档位各挂 videos[].qualities，顶层不写整体档位", () => {
+    const r = buildFxResult({
+      text: "双视频",
+      author: { name: "博主", screen_name: "author" },
+      media: {
+        photos: [],
+        videos: [
+          {
+            url: tagged("2160x2676/a.mp4"),
+            duration: 10,
+            formats: fxFormats.slice(0, 2),
+          },
+          {
+            url: tagged("2160x2676/b.mp4"),
+            duration: 20,
+            formats: fxFormats.slice(2, 4),
+          },
+        ],
+        all: [],
+      },
+    });
+    const d = r!.data;
+    expect(d.qualities).toBeUndefined();
+    expect(
+      d.videos?.map((v: { qualities?: Quality[] }) =>
+        v.qualities?.map((q: Quality) => q.label)
+      )
+    ).toEqual([
+      ["2676p", "1338p"],
+      ["892p", "594p"],
+    ]);
+  });
+
+  it("formats 只有 m3u8 或单档时不出档位，主直链保持 fixer 给的 URL", () => {
+    const mk = (formats: unknown[]) =>
+      buildFxResult({
+        text: "视频",
+        author: {},
+        media: {
+          photos: [],
+          videos: [{ url: "https://example.com/v.mp4", duration: 5, formats }],
+          all: [],
+        },
+      })!.data;
+    const m3u8Only = mk([fxFormats[5]]);
+    expect(m3u8Only.qualities).toBeUndefined();
+    expect(m3u8Only.url).toBe("https://example.com/v.mp4");
+    const single = mk([fxFormats[0]]);
+    expect(single.qualities).toBeUndefined();
+    expect(single.url).toBe("https://example.com/v.mp4");
+  });
+});
+
 describe("fxTwitter v2 结构兼容 (pickFxTweet)", () => {
   // 依据 FxEmbed 官方文档（docs.fxembed.com/api/twitter/operations/2statusid/）：
   // v2 响应顶层为 { status, thread, author }，作者信息在顶层，转发字段名为 reposts
@@ -864,6 +969,24 @@ describe("pickMp4Qualities：variants 全档位映射", () => {
     expect(pickMp4Qualities([v("1280x720/only.mp4", 1000000)])).toBeUndefined();
     expect(pickMp4Qualities([v("1280x720/e.m3u8", 900000, "application/x-mpegURL")])).toBeUndefined();
     expect(pickMp4Qualities(null as never)).toBeUndefined();
+  });
+
+  it("fxTwitter formats 的 container 命名同样识别（mp4 进档位 / m3u8 过滤）", () => {
+    const fmt = (path: string, bitrate: number, container: string) => ({
+      url: `https://video.twimg.com/amplify_video/1/vid/avc1/${path}`,
+      bitrate,
+      container,
+    });
+    expect(
+      pickMp4Qualities([
+        fmt("1280x720/low.mp4", 950000, "mp4"),
+        fmt("1920x1080/high.mp4", 2176000, "mp4"),
+        fmt("1920x1080/x.m3u8", 900000, "m3u8"),
+      ])
+    ).toEqual([
+      { quality: 1080, label: "1080p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/1920x1080/high.mp4" },
+      { quality: 720, label: "720p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/low.mp4" },
+    ]);
   });
 });
 

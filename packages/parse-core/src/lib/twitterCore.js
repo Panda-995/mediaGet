@@ -224,12 +224,15 @@ function variantHeight(v) {
  * variants 全档位 → 契约 qualities。
  * 同一档位可能有 avc1/hevc 多条（尺寸相同），按高度归并、保留高码率那条；
  * 高度缺失时退回码率文案（如 "2176kbps"），保证下拉项仍可区分。
+ *
+ * 兼容三套字段命名：syndication 的 { content_type }、顶层 video.variants 的
+ * { type }、fxTwitter formats 的 { container }（值同为 "mp4" / "m3u8"）。
  */
 export function pickMp4Qualities(variants) {
   if (!Array.isArray(variants)) return undefined;
   const byTier = new Map();
   for (const v of variants) {
-    const ct = v?.content_type || v?.type || "";
+    const ct = v?.content_type || v?.type || v?.container || "";
     if (!String(ct).includes("mp4")) continue;
     const url = v?.url || v?.src || "";
     if (!url) continue;
@@ -482,18 +485,26 @@ function buildFxResult(t) {
   const media = t.media || {};
   const videos = [];
   const images = [];
-  const pushVideo = (u, thumb, dur) => {
+  // fixer 的 formats 是它独有的档位来源（各档都带 ?tag= 签名），而官方
+  // syndication 通道的档位来自 variants——两条通道都按同一契约出 qualities
+  const seenVideoUrls = new Set();
+  const pushVideo = (u, thumb, dur, formats) => {
+    if (!u || seenVideoUrls.has(u)) return;
+    seenVideoUrls.add(u);
     const durationSec = Number(dur) > 0 ? Math.round(Number(dur)) : undefined;
+    const qualities = pickMp4Qualities(formats);
     videos.push({
       title: "",
-      url: u,
+      // 有档位表时主直链跟随最高档，与 syndication 通道同口径
+      url: qualities?.[0]?.url || u,
+      ...(qualities ? { qualities } : {}),
       duration: secToMs(durationSec),
       durationFormat: formatSeconds(durationSec),
       cover: thumb || "",
     });
   };
   for (const v of Array.isArray(media.videos) ? media.videos : []) {
-    if (v?.url) pushVideo(v.url, v.thumbnail_url, v.duration);
+    if (v?.url) pushVideo(v.url, v.thumbnail_url, v.duration, v.formats);
   }
   for (const p of Array.isArray(media.photos) ? media.photos : []) {
     if (p?.url) images.push(p.url);
@@ -501,13 +512,11 @@ function buildFxResult(t) {
   // 兼容 media.all（混合媒体推文）：无条件遍历，仅补充 photos/videos
   // 未收录的项（按 URL 去重），避免某服务分类子集不全时漏图/漏视频。
   if (Array.isArray(media.all)) {
-    const videoUrls = new Set(videos.map((v) => v.url));
     const imageUrls = new Set(images);
     for (const m of media.all) {
       if (!m?.url) continue;
-      if (m.type === "video" && !videoUrls.has(m.url)) {
-        pushVideo(m.url, m.thumbnail_url, m.duration);
-        videoUrls.add(m.url);
+      if (m.type === "video") {
+        pushVideo(m.url, m.thumbnail_url, m.duration, m.formats);
       } else if (m.type === "photo" && !imageUrls.has(m.url)) {
         images.push(m.url);
         imageUrls.add(m.url);
@@ -545,6 +554,8 @@ function buildFxResult(t) {
       url: primary?.url || images[0] || "",
       duration: primary?.duration,
       durationFormat: primary?.durationFormat,
+      // 单视频档位挂顶层（多视频各挂 videos[].qualities，顶层不写整体档位）
+      qualities: videos.length === 1 ? primary?.qualities : undefined,
       videos: videos.length > 1 ? videos : undefined,
       images: images.length > 0 ? images : undefined,
       type,
