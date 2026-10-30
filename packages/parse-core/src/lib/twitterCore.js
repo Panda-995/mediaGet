@@ -94,6 +94,19 @@ const FIXER_TIMEOUT_MS = {
   "api.vxtwitter.com": 5000,
 };
 
+/**
+ * fixer 请求头：必须是「拟浏览器」的一整套，只带 UA 会被 fx 前置的 Cloudflare WAF
+ * 直接挑战（403 + cf-mitigated: challenge，Workers 出口尤其明显）。
+ * 实测（/api/health?probe=twitter）：plain 档挑战、browser 档能拿到 fx 自己的 JSON 响应。
+ */
+const FIXER_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+  Accept: "application/json,text/plain,*/*",
+  "Accept-Language": "en-US,en;q=0.9",
+  Referer: "https://fxtwitter.com/",
+};
+
 /** 请求单个 fixer 服务，成功返回解析后的 JSON，任何失败（网络/超时/非 200）返回 null */
 async function fetchFixerJson(host, tweetId, timeoutMs) {
   const controller = new AbortController();
@@ -108,11 +121,74 @@ async function fetchFixerJson(host, tweetId, timeoutMs) {
         ? `2/status/${tweetId}`
         : `status/${tweetId}`;
     const res = await fetch(`https://${host}/${path}`, {
-      headers: { "User-Agent": "Mozilla/5.0" },
+      headers: FIXER_HEADERS,
       signal: controller.signal,
     });
     if (!res.ok) return null;
     return await res.json();
+  } catch {
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// 公共阅读器中继（r.jina.ai）
+//
+// 直连 fixer 可能按出口 IP 被拦（Workers 出口被 fx 前置 WAF 挑战或按 IP 限流；
+// 请求头已成套拟浏览器，仍被拦时走这里）。直连全挂后经阅读器中继再取一次同一份
+// fx JSON——中继由第三方出网，我们只交出「推文 ID 拼出的 fx 公开接口 URL」，不含任何用户信息。
+// 默认开启；TWITTER_FIXER_RELAY_URL=off 关闭，或填自建中继基地址替换。
+// ---------------------------------------------------------------------------
+const RELAY_DEFAULT_BASE = "https://r.jina.ai/";
+
+/** 中继基地址；关闭词（off/none/false/0）或空值返回空串表示禁用 */
+function relayBase() {
+  const raw = getConfigOrEnv(
+    "twitterFixerRelayUrl",
+    "TWITTER_FIXER_RELAY_URL",
+    RELAY_DEFAULT_BASE
+  );
+  const base = String(raw ?? "").trim();
+  if (!base || /^(off|none|false|0)$/i.test(base)) return "";
+  return base.endsWith("/") ? base : `${base}/`;
+}
+
+/**
+ * 剥掉阅读器的 Markdown 前言，取出其中的 JSON 原文。
+ * 正文形如 `Title: ...\n\nURL Source: ...\n\nMarkdown Content:\n{...}`，
+ * 找不到前言时直接从第一个 `{` 起截取（兼容自定义中继直出 JSON）。
+ * 不是合法 JSON 返回 null——中继截断/被反爬替换成 HTML 时按失败处理。
+ */
+function extractRelayJson(text) {
+  if (typeof text !== "string") return null;
+  const marker = text.indexOf("Markdown Content:");
+  const body = marker >= 0 ? text.slice(marker + "Markdown Content:".length) : text;
+  const start = body.indexOf("{");
+  const end = body.lastIndexOf("}");
+  if (start < 0 || end <= start) return null;
+  try {
+    const json = JSON.parse(body.slice(start, end + 1));
+    return json && typeof json === "object" ? json : null;
+  } catch {
+    return null;
+  }
+}
+
+/** 经中继读取 fx 的 v2 接口；禁用/失败返回 null（失败由调用方退回 syndication） */
+async function fetchFixerJsonViaRelay(tweetId, timeoutMs = TIMEOUT.DEFAULT) {
+  const base = relayBase();
+  if (!base || !tweetId) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${base}https://api.fxtwitter.com/2/status/${tweetId}`, {
+      headers: { "User-Agent": "Mozilla/5.0", Accept: "text/plain" },
+      signal: controller.signal,
+    });
+    if (!res.ok) return null;
+    return extractRelayJson(await res.text());
   } catch {
     return null;
   } finally {
@@ -224,12 +300,15 @@ function variantHeight(v) {
  * variants 全档位 → 契约 qualities。
  * 同一档位可能有 avc1/hevc 多条（尺寸相同），按高度归并、保留高码率那条；
  * 高度缺失时退回码率文案（如 "2176kbps"），保证下拉项仍可区分。
+ *
+ * 兼容三套字段命名：syndication 的 { content_type }、顶层 video.variants 的
+ * { type }、fxTwitter formats 的 { container }（值同为 "mp4" / "m3u8"）。
  */
 export function pickMp4Qualities(variants) {
   if (!Array.isArray(variants)) return undefined;
   const byTier = new Map();
   for (const v of variants) {
-    const ct = v?.content_type || v?.type || "";
+    const ct = v?.content_type || v?.type || v?.container || "";
     if (!String(ct).includes("mp4")) continue;
     const url = v?.url || v?.src || "";
     if (!url) continue;
@@ -482,18 +561,26 @@ function buildFxResult(t) {
   const media = t.media || {};
   const videos = [];
   const images = [];
-  const pushVideo = (u, thumb, dur) => {
+  // fixer 的 formats 是它独有的档位来源（各档都带 ?tag= 签名），而官方
+  // syndication 通道的档位来自 variants——两条通道都按同一契约出 qualities
+  const seenVideoUrls = new Set();
+  const pushVideo = (u, thumb, dur, formats) => {
+    if (!u || seenVideoUrls.has(u)) return;
+    seenVideoUrls.add(u);
     const durationSec = Number(dur) > 0 ? Math.round(Number(dur)) : undefined;
+    const qualities = pickMp4Qualities(formats);
     videos.push({
       title: "",
-      url: u,
+      // 有档位表时主直链跟随最高档，与 syndication 通道同口径
+      url: qualities?.[0]?.url || u,
+      ...(qualities ? { qualities } : {}),
       duration: secToMs(durationSec),
       durationFormat: formatSeconds(durationSec),
       cover: thumb || "",
     });
   };
   for (const v of Array.isArray(media.videos) ? media.videos : []) {
-    if (v?.url) pushVideo(v.url, v.thumbnail_url, v.duration);
+    if (v?.url) pushVideo(v.url, v.thumbnail_url, v.duration, v.formats);
   }
   for (const p of Array.isArray(media.photos) ? media.photos : []) {
     if (p?.url) images.push(p.url);
@@ -501,13 +588,11 @@ function buildFxResult(t) {
   // 兼容 media.all（混合媒体推文）：无条件遍历，仅补充 photos/videos
   // 未收录的项（按 URL 去重），避免某服务分类子集不全时漏图/漏视频。
   if (Array.isArray(media.all)) {
-    const videoUrls = new Set(videos.map((v) => v.url));
     const imageUrls = new Set(images);
     for (const m of media.all) {
       if (!m?.url) continue;
-      if (m.type === "video" && !videoUrls.has(m.url)) {
-        pushVideo(m.url, m.thumbnail_url, m.duration);
-        videoUrls.add(m.url);
+      if (m.type === "video") {
+        pushVideo(m.url, m.thumbnail_url, m.duration, m.formats);
       } else if (m.type === "photo" && !imageUrls.has(m.url)) {
         images.push(m.url);
         imageUrls.add(m.url);
@@ -545,6 +630,8 @@ function buildFxResult(t) {
       url: primary?.url || images[0] || "",
       duration: primary?.duration,
       durationFormat: primary?.durationFormat,
+      // 单视频档位挂顶层（多视频各挂 videos[].qualities，顶层不写整体档位）
+      qualities: videos.length === 1 ? primary?.qualities : undefined,
       videos: videos.length > 1 ? videos : undefined,
       images: images.length > 0 ? images : undefined,
       type,
@@ -644,7 +731,8 @@ function buildVxtwitterResult(t) {
 /**
  * 优先解析：fxTwitter 家族并发竞速，任一成功即返回完整 result
  * （媒体带 tag 直链 + 完整作者信息：简介/粉丝/关注 + 互动统计）；
- * vxtwitter：仅当 fxTwitter 家族全部失败才兜底（缺简介/粉丝/查看量）。
+ * fxTwitter 家族全部失败后，阅读器中继（r.jina.ai，取同一份 fx 数据）与
+ * vxtwitter（缺简介/粉丝/查看量）并行，中继优先。
  * 全部失败（网络/超时/非 200/结构缺失）返回 null，由调用方降级官方 syndication。
  */
 async function parseViaFixer(tweetId) {
@@ -657,15 +745,25 @@ async function parseViaFixer(tweetId) {
   const fx = await raceFixerResults(fxHosts, tweetId);
   if (fx) return fx;
 
-  if (vxHost) {
-    const json = await fetchFixerJson(vxHost, tweetId, 4000);
-    if (json) return buildVxtwitterResult(pickVxtweet(json));
-  }
-  return null;
+  // 直连全挂（Workers 出口被 fx 的 WAF 挑战/限流是常态）→ 中继 fx 与 vx 兜底并行：
+  // 中继拿到的是 fx 完整结构（简介/粉丝/带 tag 直链），优先于 vx 的部分字段
+  const [relayed, vxResult] = await Promise.all([
+    fetchFixerJsonViaRelay(tweetId).then((json) => {
+      const t = pickFxTweet(json);
+      return t ? buildFxResult(t) : null;
+    }),
+    vxHost
+      ? fetchFixerJson(vxHost, tweetId, 4000).then((json) => {
+          const t = pickVxtweet(json);
+          return t ? buildVxtwitterResult(t) : null;
+        })
+      : null,
+  ]);
+  return relayed || vxResult || null;
 }
 
 async function parseVideoId(tweetId) {
-  // 优先 fixer 服务：fxTwitter 家族并发竞速，vxtwitter 兜底。
+  // 优先 fixer 服务：fxTwitter 家族并发竞速，中继 fx / vxtwitter 兜底。
   // fixer 返回的数据更完整（媒体带 tag 直链、作者简介/粉丝、互动统计），
   // 且对删除/受限/敏感推文常缓存有完整内容，稳定性优于官方 syndication。
   const fixerResult = await parseViaFixer(tweetId);
@@ -857,12 +955,69 @@ export async function twitterParse(shareUrl) {
   return parseVideoId(tweetId);
 }
 
+/** 探针的两套请求头：纯 UA 对照 / 生产实际用的拟浏览器头，用来区分「服务端拒绝该出口」与「缺头被拦」 */
+const PROBE_HEADER_PROFILES = {
+  plain: { "User-Agent": "Mozilla/5.0" },
+  browser: FIXER_HEADERS,
+};
+
+function probePath(host) {
+  if (IS_VXTWITTER(host)) return "i/status/1";
+  return host === "api.fxtwitter.com" ? "2/status/1" : "status/1";
+}
+
+async function probeOne(host, headers, timeoutMs) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(`https://${host}/${probePath(host)}`, {
+      headers,
+      signal: controller.signal,
+    });
+    const out = { host, status: res.status };
+    // WAF 挑战/拦截的指纹：cf-mitigated 或非服务自身的错误页
+    const mitigated = res.headers.get("cf-mitigated");
+    if (mitigated) out.cfMitigated = mitigated;
+    const server = res.headers.get("server");
+    if (server) out.server = server;
+    if (res.status >= 400) {
+      out.snippet = (await res.text()).replace(/\s+/g, " ").slice(0, 120);
+    }
+    return out;
+  } catch (e) {
+    return {
+      host,
+      error: String(e?.name || e?.message || "fetch failed").slice(0, 80),
+    };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/**
+ * fixer 主机可达性探针（部署排障用，挂 /api/health?probe=twitter）。
+ *
+ * 背景：X 的 fixer 通道全部静默失败时，解析会退到官方 syndication，敏感推文只能拿到
+ * tombstone（「已删除或不可见」）——从结果本身看不出是「fixer 挂了」还是「推文真没了」。
+ * 这里逐主机发一次无效 ID 的请求，回传状态码、WAF 指纹与错误页片段，不含任何推文数据。
+ * 两套请求头并列上报：某些 fixer 前置 WAF 会按出口 ASN/指纹拦截，改头能过就说明是这一层。
+ */
+export async function probeFixerHosts(timeoutMs = 5000) {
+  const variants = [];
+  for (const [variant, headers] of Object.entries(PROBE_HEADER_PROFILES)) {
+    const hosts = await Promise.all(FIXER_HOSTS.map((host) => probeOne(host, headers, timeoutMs)));
+    variants.push({ variant, hosts });
+  }
+  return variants;
+}
+
 // 导出纯函数供单元测试使用（不参与对外 API 面）
 export {
   buildFxResult,
   buildVxtwitterResult,
   buildVideoFixTable,
   cleanTweetText,
+  extractRelayJson,
   fetchAuthorProfile,
   firstNonNull,
   fixTwimgVideoUrl,

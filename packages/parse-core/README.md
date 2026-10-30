@@ -192,7 +192,7 @@ const url = extractUrlFromShareText("复制打开抖音，看看…… https://v
 | `bilibili` | 哔哩哔哩 | 视频（分P/多清晰度）、图文动态（opus）、纯文字动态 | `BILIBILI_COOKIE` 建议配置；`BILIBILI_USER_AGENT` 可选 | 不支持 | 无 Cookie 的数据中心 IP 常被 `-352` 风控；opus 仅支持 `/opus/`、`/dynamic/` |
 | `weibo` | 微博 | 视频、图文、纯文字 | 无（访客模式） | 声明支持，实际未挂载 | 部分计数/作者字段只在桌面接口存在 |
 | `acfun` | AcFun | 视频 | 无 | 声明支持，实际未挂载 | — |
-| `twitter` | X / Twitter | 视频、图片、纯文字 | `TWITTER_FIXER_SERVICES` 可选（自定义 fixer 域名） | **可用** | 依赖第三方 fixer / syndication，可能随风控波动 |
+| `twitter` | X / Twitter | 视频、图片、纯文字 | `TWITTER_FIXER_SERVICES` 可选（自定义 fixer 域名）；`TWITTER_FIXER_RELAY_URL` 默认阅读器中继 | **可用** | 依赖第三方 fixer / syndication，可能随风控波动；直连被出口 IP 风控时经中继补取 |
 | `tiktok` | TikTok | 视频 | **必须**有 `yt-dlp`（`YTDLP_BIN`、`YTDLP_TIMEOUT_MS`） | 不支持 | 只能在 Docker / Node 运行，Cloudflare 等无子进程环境不可用 |
 | `instagram` | Instagram | 视频、图片/图集 | `IG_COOKIE` 强烈建议；`IG_TIMEOUT_MS` 可选 | 不支持 | 匿名访问普遍撞登录墙 |
 | `youtube` | YouTube | 视频 | `YOUTUBE_API_KEY` 可选（只补元数据）；Piped/Invidious 主机可配 | 不支持 | 直链源全部失败时返回 `embedOnly` 降级（只有官方嵌入，无直链） |
@@ -249,7 +249,7 @@ interface ApiResponse {
 - 形状为 `{ quality, label, url }`。`quality` 是平台档位值——B站为 qn（如 112）；其余平台为高度 px（如 1080），无高度时退回码率（如 2176000）。`label` 只用于展示，`url` 是该档直链。
 - 放置：单视频挂 `data.qualities`；多P/多分P 挂 `videos[].qualities`，顶层不写整体档位（避免 P1 的档位被误读为整条内容）。
 - **不足 2 档不下发**（`buildQualityList` 统一收口）；单档继续由 `qualityLabel` 徽标展示，前端只在 >1 档时渲染下拉。
-- 现有产出平台：B站、微博、快手、小红书、抖音、X、Instagram、TikTok。YouTube 只收「合流（含音轨）」档位。同一档位下发多条编码时先归并：快手优先 avc，X 取高码率；URL 重复项丢弃。
+- 现有产出平台：B站、微博、快手、小红书、抖音、X、Instagram、TikTok。X 的两条通道都出档位：官方 syndication 用 `variants`，fixer 用 `formats`（含 `container`/`bitrate`）。YouTube 只收「合流（含音轨）」档位。同一档位下发多条编码时先归并：快手优先 avc，X 取高码率；URL 重复项丢弃。
 - `url` 与档位表首项保持一致：上游同时给「默认直链 + 档位表」时，主直链跟随最高档（快手 `mainMvUrls`、抖音默认 `play_addr` 均如此处理）。
 
 完整声明见 `src/types/api.ts`。
@@ -309,6 +309,7 @@ setKernelConfig({
 | `igCookie` | `IG_COOKIE` | 强烈建议 |
 | `igTimeoutMs` | `IG_TIMEOUT_MS` | 默认 `TIMEOUT.PAGE`（20s） |
 | `twitterFixerServices` | `TWITTER_FIXER_SERVICES` | 逗号分隔的自定义 fixer 域名 |
+| `twitterFixerRelayUrl` | `TWITTER_FIXER_RELAY_URL` | 直连 fixer 全失败时的阅读器中继，默认 `https://r.jina.ai/`；`off` 关闭，可填自建中继基地址 |
 | `youtubeApiKey` | `YOUTUBE_API_KEY` | 可选，只补元数据，不给直链 |
 | `youtubeSourceTimeoutMs` | `YOUTUBE_SOURCE_TIMEOUT_MS` | 默认 6000 |
 | `youtubeApiTimeoutMs` | `YOUTUBE_API_TIMEOUT_MS` | 默认 5000 |

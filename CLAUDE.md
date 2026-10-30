@@ -50,7 +50,7 @@ npm run build:cf     # OpenNext Cloudflare 构建（产物 .open-next/）
 - 小红书：`XHS_COOKIE`（可选）。微博：自动游客模式，无需 Cookie（`WEIBO_COOKIE` 已废弃）。
 - 快手：`KUAISHOU_COOKIE`（可选，**只补作者主页的简介 / 获赞**；视频解析匿名即可，Cookie 只发 `www.kuaishou.com` 第一方，失效自动降级为匿名结果）。
 - Instagram：`IG_COOKIE`（强烈建议）、`IG_TIMEOUT_MS`（默认 20000）。
-- X/Twitter：`TWITTER_FIXER_SERVICES`（可选，覆盖 fixer 集）。
+- X/Twitter：`TWITTER_FIXER_SERVICES`（可选，覆盖 fixer 集）、`TWITTER_FIXER_RELAY_URL`（默认 `https://r.jina.ai/`，直连 fixer 全失败时经阅读器中继取 fx；`off` 关闭）。
 - YouTube：`YOUTUBE_PIPED_HOSTS`（默认内置 3 个公共 Piped 候选）、`YOUTUBE_INVIDIOUS_HOSTS`（默认**不启用**，需显式配置或自托管）、`YOUTUBE_API_KEY`（Data API v3，仅优先元数据，无直链）、`YOUTUBE_API_TIMEOUT_MS`（默认 5000）、`YOUTUBE_SOURCE_TIMEOUT_MS`（默认 6000）。yt-dlp 已不参与 YouTube。
 - 音乐：`MUSIC_API_BASE` / `MUSIC_API_BASES`（GD 契约上游链；公共实例对数据中心出口会被 CF 人机校验拦，线上需自建可直连实例）。自研直连搜索（`/api/music/self`）为代码内直连实现，无需额外环境变量。
 - 统计：`TURSO_DB_URL` + `TURSO_AUTH_TOKEN`（未配置静默禁用）、`STATS_API_KEY`（`/api/stats` Bearer，未配置 403）、`TURSO_HTTP_TIMEOUT_MS`（可选，Turso 单次请求超时，默认 8000ms，夹在 500~60000；跨境链路或经代理访问 `turso.io` 慢时用它放宽，3s 级超时在跨境链路上必然误报「存储不可用」）。

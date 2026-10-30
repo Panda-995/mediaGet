@@ -113,6 +113,8 @@
 
 > 构建命令 `npm run build:cf` 会先生成 OpenNext 产物。建议 Paid 套餐；TikTok 不可用。
 
+> X 的第三方 fixer 前置了 Cloudflare WAF，裸 `Mozilla/5.0` 的请求（Workers 出口尤甚）会直接吃 `403 challenge`；解析统一改用整套拟浏览器请求头，fx 可直达。若仍被按出口 IP 限流，会经 `r.jina.ai` 阅读器中继补取同一份 fx 数据（只转发「推文 ID 拼出的 fx 公开接口 URL」，该 URL 会经过第三方），正文、媒体、博主简介/粉丝因此都正常。介意内容外流可设 `TWITTER_FIXER_RELAY_URL=off`，此时退回官方 syndication：缺简介/粉丝，敏感内容可能报「已删除或不可见」。排障看 `/api/health?probe=twitter`（plain/browser 两档请求头对照）。
+
 ### Netlify
 
   <a href="https://app.netlify.com/start/deploy?repository=https://github.com/hotier/mediaGet"><img src="https://www.netlify.com/img/deploy/button.svg" alt="Deploy to Netlify" height="32" /></a>
@@ -121,7 +123,7 @@
 2. **Site configuration → Environment variables** 填入运行配置
 3. 点击 **Deploy site**，完成后绑定域名
 
-> 函数默认 10 秒超时、响应体上限 6 MB、TikTok 不可用，适合演示与备用。
+> 函数默认 10 秒超时、响应体上限 6 MB、TikTok 不可用，适合演示与备用。经 `/api/video-proxy` 转发的视频超过约 6 MB 会被截断，X 等平台的视频播放/下载因此不可靠；需要完整播放请用 Cloudflare Workers 或 Docker。
 
 ### Docker（推荐）
 

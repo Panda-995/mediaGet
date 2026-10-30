@@ -20,6 +20,8 @@ export interface KernelConfig {
   kuaishouCookie?: string;
   /** Twitter/X */
   twitterFixerServices?: string;
+  /** Twitter/X —— 直连 fixer 全失败时的阅读器中继（默认 https://r.jina.ai/，off 关闭），每次解析时读取 */
+  twitterFixerRelayUrl?: string;
   /** Xiaohongshu */
   xhsCookie?: string;
   /** YouTube */

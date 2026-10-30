@@ -31,6 +31,14 @@ const MAX_BYTES = 10 * 1024 * 1024;
 const CACHEABLE_MAX_BYTES = 4 * 1024 * 1024;
 
 /**
+ * 中间层缓存键必须带上 url 查询参数。
+ * Netlify CDN 的默认缓存键只有「主机 + 路径」，不区分查询串——不声明时
+ * /api/image?url=A 与 ?url=B 会命中同一份缓存，表现为「图片全站串味」。
+ * Cloudflare 等其它运行时忽略该头，无副作用。
+ */
+const PROXY_CACHE_HEADERS = { "Netlify-Vary": "query" };
+
+/**
  * 边缘缓存：同一张图在多个 isolate / 多次冷启动之间复用，减少回源与出站。
  * 仅 Workers 运行时提供 caches.default；Node（本地/Docker/Netlify）下为 null，自动跳过。
  */
@@ -157,6 +165,7 @@ export async function GET(request) {
         "Content-Length": String(cached.buffer.length),
         "Cache-Control": "public, max-age=21600",
         "X-Proxy-Cache": "memory",
+        ...PROXY_CACHE_HEADERS,
       },
     });
   }
@@ -220,6 +229,7 @@ export async function GET(request) {
       "Content-Length": String(buffer.length),
       "Cache-Control": "public, max-age=21600",
       "X-Proxy-Cache": "miss",
+      ...PROXY_CACHE_HEADERS,
     };
     const response = new Response(buffer, { headers: responseHeaders });
     recordProxyTraffic("image", buffer.length);

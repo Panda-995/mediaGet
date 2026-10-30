@@ -7,6 +7,7 @@ import {
   buildVxtwitterResult,
   buildVideoFixTable,
   cleanTweetText,
+  extractRelayJson,
   fetchAuthorProfile,
   firstNonNull,
   fixTwimgVideoUrl,
@@ -17,6 +18,7 @@ import {
   pickMp4Qualities,
   pickFxTweet,
   pickVxtweet,
+  probeFixerHosts,
   raceFixerResults,
 } from "@/lib/twitterCore";
 
@@ -291,6 +293,111 @@ describe("fxTwitter 适配器 (buildFxResult)", () => {
 
   it("tombstone 结构（删除/不可见）返回 null，不产出空文本推文", () => {
     expect(buildFxResult({ type: "tombstone", text: "unavailable" } as never)).toBeNull();
+  });
+});
+
+describe("buildFxResult：fixer formats 补全档位表", () => {
+  // 档位项形状；buildFxResult 是 JS 源，推断不出回调参数类型
+  type Quality = { quality: number; label: string; url: string };
+  // mp4 各档逐字取自 2026-10-29 实测 api.fxtwitter.com /2/status/2094654361331012092
+  // 的 formats（全带 ?tag=29）；高度与线上同链接 syndication 的 5 档一致
+  // （2676/1338/892/594/396）。末尾 m3u8 的文件名为构造值，仅用于验证被过滤。
+  const tagged = (path: string) =>
+    `https://video.twimg.com/amplify_video/2094654000729849856/vid/avc1/${path}?tag=29`;
+  const fxFormats = [
+    { url: tagged("2160x2676/gytaut_zsJVA3M31.mp4"), bitrate: 25128000, container: "mp4" },
+    { url: tagged("1080x1338/BSBabJlcAhbocZv2.mp4"), bitrate: 10368000, container: "mp4" },
+    { url: tagged("720x892/Dz5OZlblIIbxdj3c.mp4"), bitrate: 2176000, container: "mp4" },
+    { url: tagged("480x594/Cu5A2IVPgGzDWI6S.mp4"), bitrate: 950000, container: "mp4" },
+    { url: tagged("320x396/F-qbnSGVnTzq8KmI.mp4"), bitrate: 632000, container: "mp4" },
+    {
+      url: "https://video.twimg.com/amplify_video/2094654000729849856/pl/VBMrD4XeNux1ZrLm.m3u8?tag=29",
+      container: "m3u8",
+    },
+  ];
+
+  it("单视频：5 档挂顶层 qualities，主直链跟随最高档，档位 URL 均带 tag", () => {
+    const r = buildFxResult({
+      text: "视频",
+      author: { name: "博主", screen_name: "author" },
+      media: {
+        photos: [],
+        videos: [
+          {
+            url: tagged("2160x2676/gytaut_zsJVA3M31.mp4"),
+            thumbnail_url: "https://example.com/thumb.jpg",
+            duration: 25.054,
+            formats: fxFormats,
+          },
+        ],
+        all: [],
+      },
+    });
+    const d = r!.data;
+    expect(d.qualities?.map((q: Quality) => q.label)).toEqual([
+      "2676p",
+      "1338p",
+      "892p",
+      "594p",
+      "396p",
+    ]);
+    expect(d.qualities?.map((q: Quality) => q.quality)).toEqual([2676, 1338, 892, 594, 396]);
+    expect(d.url).toBe(d.qualities![0].url);
+    expect(d.qualities!.every((q: Quality) => q.url.includes("?tag=29"))).toBe(true);
+    // 单视频走 url 主媒体，videos 列表仍不输出
+    expect(d.videos).toBeUndefined();
+  });
+
+  it("多视频：档位各挂 videos[].qualities，顶层不写整体档位", () => {
+    const r = buildFxResult({
+      text: "双视频",
+      author: { name: "博主", screen_name: "author" },
+      media: {
+        photos: [],
+        videos: [
+          {
+            url: tagged("2160x2676/a.mp4"),
+            duration: 10,
+            formats: fxFormats.slice(0, 2),
+          },
+          {
+            url: tagged("2160x2676/b.mp4"),
+            duration: 20,
+            formats: fxFormats.slice(2, 4),
+          },
+        ],
+        all: [],
+      },
+    });
+    const d = r!.data;
+    expect(d.qualities).toBeUndefined();
+    expect(
+      d.videos?.map((v: { qualities?: Quality[] }) =>
+        v.qualities?.map((q: Quality) => q.label)
+      )
+    ).toEqual([
+      ["2676p", "1338p"],
+      ["892p", "594p"],
+    ]);
+  });
+
+  it("formats 只有 m3u8 或单档时不出档位，主直链保持 fixer 给的 URL", () => {
+    const mk = (formats: unknown[]) =>
+      buildFxResult({
+        text: "视频",
+        author: {},
+        media: {
+          photos: [],
+          videos: [{ url: "https://example.com/v.mp4", duration: 5, formats }],
+          all: [],
+        },
+      })!.data;
+    const m3u8Only = mk([fxFormats[5]]);
+    expect(m3u8Only.qualities).toBeUndefined();
+    expect(m3u8Only.url).toBe("https://example.com/v.mp4");
+    const single = mk([fxFormats[0]]);
+    expect(single.qualities).toBeUndefined();
+    expect(single.url).toBe("https://example.com/v.mp4");
   });
 });
 
@@ -774,6 +881,125 @@ describe("parseVideoId：fixer 优先，官方 syndication 兜底", () => {
   });
 });
 
+describe("阅读器中继：直连 fixer 全挂时经 r.jina.ai 取 fx", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    delete process.env.TWITTER_FIXER_RELAY_URL;
+  });
+
+  const relayedFx = JSON.stringify({
+    code: 200,
+    message: "OK",
+    status: {
+      text: "中继推文",
+      created_at: "Mon Aug 31 10:14:02 +0000 2026",
+      author: {
+        name: "中继作者",
+        screen_name: "relay",
+        description: "中继简介",
+        followers: 88,
+        following: 8,
+      },
+      likes: 3,
+      retweets: 2,
+      replies: 1,
+      views: 9,
+      media: { photos: [], videos: [], all: [] },
+    },
+  });
+
+  /** 直连 fixer 一律模拟 Workers 出口被 WAF 挑战；中继按 relayText 成功或失败 */
+  function stubWafBlocked(relayText: string | null) {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      const u = String(url);
+      seen.push(u);
+      if (u.startsWith("https://r.jina.ai/")) {
+        return relayText === null
+          ? new Response("bad gateway", { status: 502 })
+          : new Response(relayText, { status: 200 });
+      }
+      return new Response("Just a moment...", {
+        status: 403,
+        headers: { "cf-mitigated": "challenge" },
+      });
+    });
+    return seen;
+  }
+
+  it("直连全挂时中继成功：拿到 fx 完整字段，不再打扰 syndication", async () => {
+    const seen = stubWafBlocked(
+      `Title: \n\nURL Source: https://api.fxtwitter.com/2/status/123\n\nMarkdown Content:\n${relayedFx}`
+    );
+    const r = await parseVideoId("2094749764659384710");
+    expect(r?.code).toBe(200);
+    expect(r!.data.title).toBe("中继推文");
+    expect(r!.data.sign).toBe("中继简介");
+    expect(r!.data.followerCount).toBe(88);
+    expect(seen).toContain(
+      "https://r.jina.ai/https://api.fxtwitter.com/2/status/2094749764659384710"
+    );
+    expect(seen.some((u) => u.includes("cdn.syndication.twimg.com"))).toBe(false);
+  });
+
+  it("中继也失败 → 退回 syndication", async () => {
+    const seen = stubWafBlocked(null);
+    const r = await parseVideoId("2094749764659384710");
+    // syndication 同样被 stub 成 403，用状态码确认走到了官方兜底
+    expect(r?.code).toBe(403);
+    expect(seen.some((u) => u.includes("cdn.syndication.twimg.com"))).toBe(true);
+  });
+
+  it("TWITTER_FIXER_RELAY_URL=off 时完全不发中继请求", async () => {
+    process.env.TWITTER_FIXER_RELAY_URL = "off";
+    const seen = stubWafBlocked(`Markdown Content:\n${relayedFx}`);
+    const r = await parseVideoId("2094749764659384710");
+    expect(r?.code).toBe(403);
+    expect(seen.some((u) => u.includes("r.jina.ai"))).toBe(false);
+  });
+});
+
+describe("fixer 请求头：拟浏览器整套头规避 WAF 挑战", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("直连 fx 带 Accept/Accept-Language/Referer，而不只是裸 UA", async () => {
+    const sent: Headers[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      if (String(url).includes("api.fxtwitter.com")) {
+        sent.push(new Headers(init?.headers));
+      }
+      return new Response(JSON.stringify(realFxTwitterJson), { status: 200 });
+    });
+
+    const r = await parseVideoId("2094368106751951154");
+    expect(r?.code).toBe(200);
+    const h = sent[0];
+    expect(h.get("accept")).toBe("application/json,text/plain,*/*");
+    expect(h.get("accept-language")).toBe("en-US,en;q=0.9");
+    expect(h.get("referer")).toBe("https://fxtwitter.com/");
+    // 裸 Mozilla/5.0 会被 fx 前置 WAF 挑战，必须是完整 Chrome UA
+    expect(h.get("user-agent")).toContain("Chrome/");
+  });
+});
+
+describe("extractRelayJson：剥掉阅读器前言取 JSON", () => {
+  it("Markdown 包装里取出 JSON", () => {
+    const text = 'Title: \n\nURL Source: https://x\n\nMarkdown Content:\n{"a":1}';
+    expect(extractRelayJson(text)).toEqual({ a: 1 });
+  });
+
+  it("裸 JSON（自定义中继直出）同样可解析", () => {
+    expect(extractRelayJson('{"a":{"b":2}}')).toEqual({ a: { b: 2 } });
+  });
+
+  it("截断/HTML/非对象一律返回 null", () => {
+    expect(extractRelayJson('{"a":1')).toBeNull();
+    expect(extractRelayJson("<html>blocked</html>")).toBeNull();
+    expect(extractRelayJson("null")).toBeNull();
+    expect(extractRelayJson(undefined as unknown as string)).toBeNull();
+  });
+});
+
 describe("cleanTweetText：解码 HTML 实体并剔除媒体短链占位", () => {
   it("解码 &gt; &lt; &amp; 等常见实体", () => {
     expect(cleanTweetText("逻辑不复杂：&gt; 专注短线&nbsp;涨/跌")).toBe(
@@ -865,6 +1091,24 @@ describe("pickMp4Qualities：variants 全档位映射", () => {
     expect(pickMp4Qualities([v("1280x720/e.m3u8", 900000, "application/x-mpegURL")])).toBeUndefined();
     expect(pickMp4Qualities(null as never)).toBeUndefined();
   });
+
+  it("fxTwitter formats 的 container 命名同样识别（mp4 进档位 / m3u8 过滤）", () => {
+    const fmt = (path: string, bitrate: number, container: string) => ({
+      url: `https://video.twimg.com/amplify_video/1/vid/avc1/${path}`,
+      bitrate,
+      container,
+    });
+    expect(
+      pickMp4Qualities([
+        fmt("1280x720/low.mp4", 950000, "mp4"),
+        fmt("1920x1080/high.mp4", 2176000, "mp4"),
+        fmt("1920x1080/x.m3u8", 900000, "m3u8"),
+      ])
+    ).toEqual([
+      { quality: 1080, label: "1080p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/1920x1080/high.mp4" },
+      { quality: 720, label: "720p", url: "https://video.twimg.com/amplify_video/1/vid/avc1/1280x720/low.mp4" },
+    ]);
+  });
 });
 
 describe("buildVideoFixTable / fixTwimgVideoUrl：twimg 直链补 tag 签名", () => {
@@ -935,5 +1179,38 @@ describe("buildVideoFixTable / fixTwimgVideoUrl：twimg 直链补 tag 签名", (
       "https://video.twimg.com/a/b.mp4"
     );
     expect(fixTwimgVideoUrl("", buildVideoFixTable({ media: realFxMedia }))).toBe("");
+  });
+});
+
+describe("probeFixerHosts：部署排障探针", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("逐主机回传状态码/错误名，单主机失败不影响其它主机", async () => {
+    const seen: string[] = [];
+    const headers: (string | null)[] = [];
+    vi.stubGlobal("fetch", async (url: string, init: RequestInit) => {
+      seen.push(url);
+      headers.push(new Headers(init?.headers).get("accept-language"));
+      if (url.includes("fixupx")) throw new TypeError("fetch failed");
+      return new Response("{}", { status: 404, headers: { "cf-mitigated": "challenge" } });
+    });
+
+    type Probe = {
+      variant: string;
+      hosts: { host: string; status?: number; error?: string; cfMitigated?: string }[];
+    };
+    const variants = (await probeFixerHosts(1000)) as Probe[];
+    expect(variants.map((v) => v.variant)).toEqual(["plain", "browser"]);
+    for (const v of variants) expect(v.hosts).toHaveLength(4);
+
+    const plain = Object.fromEntries(variants[0].hosts.map((h) => [h.host, h]));
+    expect(plain["api.fxtwitter.com"].status).toBe(404);
+    expect(plain["api.fxtwitter.com"].cfMitigated).toBe("challenge");
+    expect(plain["api.fixupx.com"].error).toBe("TypeError");
+    // 两套请求头各发一轮：browser 档必须带上 Accept-Language，plain 档不带
+    expect(headers[0]).toBeNull();
+    expect(headers).toContain("en-US,en;q=0.9");
+    expect(seen).toContain("https://api.fxtwitter.com/2/status/1");
+    expect(seen).toContain("https://api.vxtwitter.com/i/status/1");
   });
 });
